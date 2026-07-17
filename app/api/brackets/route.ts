@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import {
   BracketData,
@@ -13,16 +13,16 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user)
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
-  const rows = db
-    .prepare(
-      "SELECT id, name, data, created_at, updated_at FROM brackets WHERE user_id = ? ORDER BY updated_at DESC"
-    )
-    .all(user.id) as { id: string; name: string; data: string }[];
-  const brackets = rows.map((r) => {
-    const data = JSON.parse(r.data) as BracketData;
+  const db = await getDb();
+  const res = await db.execute({
+    sql: "SELECT id, name, data FROM brackets WHERE user_id = ? ORDER BY updated_at DESC",
+    args: [user.id],
+  });
+  const brackets = res.rows.map((r) => {
+    const data = JSON.parse(String(r.data)) as BracketData;
     return {
-      id: r.id,
-      name: r.name,
+      id: String(r.id),
+      name: String(r.name),
       participants: participantCount(data),
       updatedAt: data.updatedAt,
     };
@@ -58,11 +58,13 @@ export async function POST(req: NextRequest) {
   if (!validate(data))
     return NextResponse.json({ error: "Invalid bracket." }, { status: 400 });
 
+  const db = await getDb();
   const id = newId();
   const now = Date.now();
   const stored: BracketData = { ...data, id, createdAt: now, updatedAt: now };
-  db.prepare(
-    "INSERT INTO brackets (id, user_id, name, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
-  ).run(id, user.id, stored.name.trim(), JSON.stringify(stored), now, now);
+  await db.execute({
+    sql: "INSERT INTO brackets (id, user_id, name, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    args: [id, user.id, stored.name.trim(), JSON.stringify(stored), now, now],
+  });
   return NextResponse.json({ id });
 }

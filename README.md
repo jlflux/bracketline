@@ -22,7 +22,9 @@ themes, a light-blue accent, and a layout that works on desktop and phone.
 ## Stack
 
 - [Next.js](https://nextjs.org) (App Router) + React + TypeScript
-- SQLite via `better-sqlite3` (database file created at `data/bracketline.db`)
+- SQLite-compatible storage via [`@libsql/client`](https://github.com/tursodatabase/libsql-client-ts):
+  a local file (`data/bracketline.db`) in development, [Turso](https://turso.tech)
+  in production
 - No CSS framework — hand-rolled design system in `app/globals.css`
   driven by CSS custom properties for theming
 
@@ -33,12 +35,32 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-Production:
+No configuration needed — without env vars the app uses a local SQLite file.
+
+Production build:
 
 ```bash
 npm run build
 npm start
 ```
+
+## Deploying to Vercel
+
+Vercel's serverless filesystem is ephemeral, so the database lives in
+[Turso](https://turso.tech) (SQLite-compatible, free tier available):
+
+1. Create a Turso database and grab its credentials:
+   ```bash
+   turso db create bracketline
+   turso db show bracketline --url     # -> TURSO_DATABASE_URL
+   turso db tokens create bracketline  # -> TURSO_AUTH_TOKEN
+   ```
+   (Or create the database and token in the Turso web dashboard.)
+2. Import this repository into Vercel (Add New → Project). The Next.js
+   defaults are correct as-is.
+3. In the project's **Settings → Environment Variables**, add
+   `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
+4. Deploy. Tables are created automatically on first use.
 
 ## Layout
 

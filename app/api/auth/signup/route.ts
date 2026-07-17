@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { hashPassword, createSession, setSessionCookie } from "@/lib/auth";
 import { newId } from "@/lib/bracket";
 
@@ -22,20 +22,23 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
 
-  const existing = db
-    .prepare("SELECT id FROM users WHERE email = ?")
-    .get(email);
-  if (existing)
+  const db = await getDb();
+  const existing = await db.execute({
+    sql: "SELECT id FROM users WHERE email = ?",
+    args: [email],
+  });
+  if (existing.rows.length > 0)
     return NextResponse.json(
       { error: "An account with that email already exists." },
       { status: 409 }
     );
 
   const id = newId("u_");
-  db.prepare(
-    "INSERT INTO users (id, email, username, pass_hash, created_at) VALUES (?, ?, ?, ?, ?)"
-  ).run(id, email, username, hashPassword(password), Date.now());
+  await db.execute({
+    sql: "INSERT INTO users (id, email, username, pass_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    args: [id, email, username, hashPassword(password), Date.now()],
+  });
 
-  await setSessionCookie(createSession(id));
+  await setSessionCookie(await createSession(id));
   return NextResponse.json({ user: { id, email, username } });
 }
