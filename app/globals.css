@@ -549,6 +549,17 @@ textarea {
   white-space: nowrap;
 }
 
+/* ---------- Team editing (customize mode) ---------- */
+.match-card.team-editable {
+  cursor: pointer;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+}
+.match-card.team-editable:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 /* ---------- Seed editing (drag & drop) ---------- */
 .match-card.swappable {
   border-style: dashed;
@@ -605,11 +616,6 @@ textarea {
   margin: 0 0 8px;
   font-size: 15px;
 }
-.customize-participants {
-  max-height: 300px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
 .customize-footer {
   display: flex;
   align-items: center;
@@ -621,16 +627,8 @@ textarea {
   .customize-panel {
     grid-template-columns: 1fr 1fr;
   }
-  .customize-panel .customize-section:nth-child(3),
   .customize-panel .customize-footer {
     grid-column: 1 / -1;
-  }
-  .customize-participants {
-    columns: 2;
-    column-gap: 14px;
-  }
-  .customize-participants .participant-row {
-    break-inside: avoid;
   }
 }
 

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import BracketView from "@/components/BracketView";
 import {
   BracketData,
-  Participant,
   computeBracket,
   hasProgress,
   participantCount,
@@ -242,6 +241,13 @@ export default function BracketPage({
             Done
           </button>
         </div>
+      ) : panelOpen ? (
+        <div className="seed-edit-banner">
+          <span>
+            <strong>Customize:</strong> click any matchup to edit the teams in
+            it — seed and name.
+          </span>
+        </div>
       ) : (
         canEdit && (
           <p className="hint" style={{ margin: "0 0 12px" }}>
@@ -257,6 +263,7 @@ export default function BracketPage({
         onChange={onChange}
         seedEdit={seedEdit}
         onSwap={onSwap}
+        teamEdit={panelOpen && !seedEdit}
       />
       {toast && <div className="toast">{toast}</div>}
     </main>
@@ -289,13 +296,6 @@ function CustomizePanel({
       return;
     }
     onChange({ ...data, name: trimmed.slice(0, 120), updatedAt: Date.now() });
-  }
-
-  function updateParticipant(slotIndex: number, patch: Partial<Participant>) {
-    const slots = data.slots.map((s, i) =>
-      i === slotIndex && s ? { ...s, ...patch } : s
-    );
-    onChange({ ...data, slots, updatedAt: Date.now() });
   }
 
   return (
@@ -332,40 +332,6 @@ function CustomizePanel({
           >
             Custom — drag &amp; drop
           </button>
-        </div>
-      </div>
-
-      <div className="customize-section">
-        <h2>Participants</h2>
-        <p className="hint" style={{ margin: "0 0 10px" }}>
-          Edit seeds and names. Positions don&apos;t change — use Placement
-          above to re-arrange.
-        </p>
-        <div className="customize-participants">
-          {data.slots.map((s, i) =>
-            s ? (
-              <div key={i} className="participant-row">
-                <input
-                  className="input seed"
-                  value={s.seed}
-                  maxLength={20}
-                  aria-label={`Seed for ${s.name}`}
-                  onChange={(e) =>
-                    updateParticipant(i, { seed: e.target.value })
-                  }
-                />
-                <input
-                  className="input"
-                  value={s.name}
-                  maxLength={80}
-                  aria-label="Participant name"
-                  onChange={(e) =>
-                    updateParticipant(i, { name: e.target.value })
-                  }
-                />
-              </div>
-            ) : null
-          )}
         </div>
       </div>
 

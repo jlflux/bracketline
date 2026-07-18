@@ -5,6 +5,7 @@ import {
   BracketData,
   Match,
   MatchResult,
+  Participant,
   applyResult,
   computeBracket,
   roundName,
@@ -25,6 +26,9 @@ type Props = {
    *  bracket positions; result editing is disabled. */
   seedEdit?: boolean;
   onSwap?: (slotA: number, slotB: number) => void;
+  /** When true (customize mode), clicking a matchup edits the teams in it
+   *  (seed + name) instead of the result. */
+  teamEdit?: boolean;
 };
 
 function hasSchedule(r: MatchResult): boolean {
@@ -56,9 +60,11 @@ export default function BracketView({
   onChange,
   seedEdit = false,
   onSwap,
+  teamEdit = false,
 }: Props) {
   const computed = useMemo(() => computeBracket(data), [data]);
   const [editing, setEditing] = useState<Match | null>(null);
+  const [teamEditing, setTeamEditing] = useState<Match | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [dragSlot, setDragSlot] = useState<number | null>(null);
 
@@ -98,6 +104,13 @@ export default function BracketView({
   function saveResult(match: Match, result: MatchResult) {
     onChange?.(applyResult(data, match.round, match.index, result));
     setEditing(null);
+  }
+
+  function saveTeams(edited: Participant[]) {
+    const byId = new Map(edited.map((p) => [p.id, p]));
+    const slots = data.slots.map((s) => (s && byId.get(s.id)) || s);
+    onChange?.({ ...data, slots, updatedAt: Date.now() });
+    setTeamEditing(null);
   }
 
   function trySwap(a: number, b: number) {
@@ -150,13 +163,27 @@ export default function BracketView({
 
         {computed.rounds.map((round, r) =>
           round.map((match, i) => {
+            const canEditTeams =
+              editable && teamEdit && !seedEdit && !!(match.p1 || match.p2);
             const canEditResult =
-              editable && !seedEdit && !!match.p1 && !!match.p2 && !match.isBye;
+              editable &&
+              !seedEdit &&
+              !teamEdit &&
+              !!match.p1 &&
+              !!match.p2 &&
+              !match.isBye;
             const swappable = seedEdit && r === 0;
+            const onClick = canEditTeams
+              ? () => setTeamEditing(match)
+              : canEditResult
+                ? () => setEditing(match)
+                : undefined;
             return (
               <div
                 key={match.key}
-                className={`match-card${canEditResult ? " clickable" : ""}${
+                className={`match-card${
+                  canEditResult ? " clickable" : ""
+                }${canEditTeams ? " team-editable" : ""}${
                   swappable ? " swappable" : ""
                 }`}
                 style={{
@@ -164,8 +191,8 @@ export default function BracketView({
                   top: centers[r][i] - heights[r][i] / 2,
                   width: CARD_W,
                 }}
-                onClick={canEditResult ? () => setEditing(match) : undefined}
-                role={canEditResult ? "button" : undefined}
+                onClick={onClick}
+                role={onClick ? "button" : undefined}
               >
                 {([1, 2] as const).map((side) => {
                   const slotIndex = i * 2 + side - 1;
@@ -208,6 +235,87 @@ export default function BracketView({
           onClose={() => setEditing(null)}
         />
       )}
+      {teamEditing && (
+        <TeamEditor
+          match={teamEditing}
+          onSave={saveTeams}
+          onClose={() => setTeamEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function TeamEditor({
+  match,
+  onSave,
+  onClose,
+}: {
+  match: Match;
+  onSave: (edited: Participant[]) => void;
+  onClose: () => void;
+}) {
+  const present = [match.p1, match.p2].filter(
+    (p): p is Participant => p !== null
+  );
+  const [teams, setTeams] = useState<Participant[]>(
+    present.map((p) => ({ ...p }))
+  );
+
+  function update(idx: number, patch: Partial<Participant>) {
+    setTeams((prev) =>
+      prev.map((t, i) => (i === idx ? { ...t, ...patch } : t))
+    );
+  }
+
+  function save() {
+    onSave(
+      teams.map((t, i) => ({
+        ...t,
+        name: t.name.trim() || present[i].name,
+        seed: t.seed.trim(),
+      }))
+    );
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal card" onClick={(e) => e.stopPropagation()}>
+        <h2>Edit teams</h2>
+        <p className="sub">
+          Change each team&apos;s seed and name. This applies everywhere they
+          appear in the bracket.
+        </p>
+        {teams.map((t, i) => (
+          <div key={t.id} className="participant-row">
+            <input
+              className="input seed"
+              value={t.seed}
+              maxLength={20}
+              placeholder="Seed"
+              aria-label={`Seed for ${present[i].name}`}
+              onChange={(e) => update(i, { seed: e.target.value })}
+            />
+            <input
+              className="input"
+              value={t.name}
+              maxLength={80}
+              placeholder={present[i].name}
+              aria-label={`Name for team ${i + 1}`}
+              onChange={(e) => update(i, { name: e.target.value })}
+            />
+          </div>
+        ))}
+        <div className="modal-actions">
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={save}>
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
