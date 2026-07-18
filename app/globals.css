@@ -534,6 +534,120 @@ textarea {
 .match-slot.loser .seed-tag {
   opacity: 0.55;
 }
+.match-info {
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Seed editing (drag & drop) ---------- */
+.match-card.swappable {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+}
+.match-slot.swap-target {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.match-slot.swap-target:hover {
+  background: var(--surface-2);
+}
+.match-slot.swap-selected {
+  background: color-mix(in srgb, var(--accent-soft) 80%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.match-slot.swap-dragging {
+  opacity: 0.45;
+}
+.drag-grip {
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: -2px;
+  opacity: 0.8;
+  flex: none;
+}
+.seed-edit-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+.seed-edit-banner span {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* ---------- Customize panel ---------- */
+.customize-panel {
+  padding: 20px;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 20px;
+}
+.customize-section h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.customize-participants {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.customize-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+@media (min-width: 760px) {
+  .customize-panel {
+    grid-template-columns: 1fr 1fr;
+  }
+  .customize-panel .customize-section:nth-child(3),
+  .customize-panel .customize-footer {
+    grid-column: 1 / -1;
+  }
+  .customize-participants {
+    columns: 2;
+    column-gap: 14px;
+  }
+  .customize-participants .participant-row {
+    break-inside: avoid;
+  }
+}
+
+/* ---------- Match editor schedule fields ---------- */
+.schedule-fields {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+.schedule-when {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 .connector-path {
   stroke: var(--border-strong);
   stroke-width: 1.5;

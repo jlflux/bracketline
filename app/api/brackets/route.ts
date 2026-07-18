@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiHandler } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import {
@@ -9,7 +10,7 @@ import {
   MAX_PARTICIPANTS,
 } from "@/lib/bracket";
 
-export async function GET() {
+export const GET = apiHandler(async () => {
   const user = await getCurrentUser();
   if (!user)
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -28,7 +29,7 @@ export async function GET() {
     };
   });
   return NextResponse.json({ brackets });
-}
+});
 
 function validate(data: unknown): data is BracketData {
   const d = data as BracketData;
@@ -49,7 +50,7 @@ function validate(data: unknown): data is BracketData {
   return true;
 }
 
-export async function POST(req: NextRequest) {
+export const POST = apiHandler(async (req: NextRequest) => {
   const user = await getCurrentUser();
   if (!user)
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -67,4 +68,4 @@ export async function POST(req: NextRequest) {
     args: [id, user.id, stored.name.trim(), JSON.stringify(stored), now, now],
   });
   return NextResponse.json({ id });
-}
+});

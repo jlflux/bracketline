@@ -9,6 +9,11 @@ function create(): Client {
   if (url) {
     return createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
   }
+  if (process.env.VERCEL) {
+    throw new Error(
+      "Database not configured: set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in your Vercel environment variables, then redeploy."
+    );
+  }
   const dir = path.join(process.cwd(), "data");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return createClient({ url: "file:" + path.join(dir, "bracketline.db") });

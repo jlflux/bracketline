@@ -3,13 +3,29 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BracketView from "@/components/BracketView";
-import { BracketData, computeBracket, participantCount } from "@/lib/bracket";
+import {
+  BracketData,
+  Participant,
+  computeBracket,
+  hasProgress,
+  participantCount,
+  rearrange,
+  swapSlots,
+} from "@/lib/bracket";
 import {
   deleteLocal,
   getLocal,
   isLocalId,
   saveLocal,
 } from "@/lib/localBrackets";
+
+async function readJson(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
 
 export default function BracketPage({
   params,
@@ -23,12 +39,14 @@ export default function BracketPage({
   const [loggedIn, setLoggedIn] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [toast, setToast] = useState("");
+  const [seedEdit, setSeedEdit] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const local = isLocalId(id);
 
   useEffect(() => {
     fetch("/api/me")
-      .then((r) => r.json())
+      .then(readJson)
       .then((d) => setLoggedIn(!!d.user))
       .catch(() => {});
   }, []);
@@ -67,7 +85,14 @@ export default function BracketPage({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data: next }),
-        }).catch(() => showToast("Could not save — check your connection"));
+        })
+          .then(async (r) => {
+            if (!r.ok) {
+              const body = await readJson(r);
+              showToast(String(body.error ?? "Could not save"));
+            }
+          })
+          .catch(() => showToast("Could not save — check your connection"));
       }, 500);
     },
     [id, local]
@@ -75,7 +100,7 @@ export default function BracketPage({
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 2200);
+    setTimeout(() => setToast(""), 2600);
   }
 
   function onChange(next: BracketData) {
@@ -83,11 +108,29 @@ export default function BracketPage({
     persist(next);
   }
 
-  function renameBracket() {
+  function confirmRearrange(): boolean {
+    if (!data || !hasProgress(data)) return true;
+    return confirm(
+      "Re-arranging changes the matchups, so recorded scores and winners will be cleared (match locations and times are kept). Continue?"
+    );
+  }
+
+  function arrange(mode: "seeded" | "random") {
+    if (!data || !confirmRearrange()) return;
+    setSeedEdit(false);
+    onChange(rearrange(data, mode));
+    showToast(mode === "seeded" ? "Arranged by seed" : "Random draw complete");
+  }
+
+  function startSeedEdit() {
     if (!data) return;
-    const name = prompt("Bracket name", data.name);
-    if (name === null || !name.trim()) return;
-    onChange({ ...data, name: name.trim().slice(0, 120), updatedAt: Date.now() });
+    if (!seedEdit && !confirmRearrange()) return;
+    setSeedEdit(!seedEdit);
+  }
+
+  function onSwap(a: number, b: number) {
+    if (!data) return;
+    onChange(swapSlots(data, a, b));
   }
 
   async function saveToAccount() {
@@ -97,9 +140,9 @@ export default function BracketPage({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data }),
     });
-    const body = await res.json();
+    const body = await readJson(res);
     if (!res.ok) {
-      showToast(body.error || "Could not save");
+      showToast(String(body.error ?? "Could not save"));
       return;
     }
     deleteLocal(id);
@@ -141,24 +184,19 @@ export default function BracketPage({
   return (
     <main className="container" style={{ maxWidth: 1400 }}>
       <div className="bracket-toolbar">
-        <h1>
-          {data.name}{" "}
-          {canEdit && (
-            <button
-              className="btn small ghost"
-              onClick={renameBracket}
-              aria-label="Rename bracket"
-            >
-              Rename
-            </button>
-          )}
-        </h1>
+        <h1>{data.name}</h1>
         {champion && (
-          <span className="champion-banner">
-            🏆 {champion.name} wins
-          </span>
+          <span className="champion-banner">🏆 {champion.name} wins</span>
         )}
         <span className="hint">{participantCount(data)} players</span>
+        {canEdit && (
+          <button
+            className={`btn small${panelOpen ? " primary" : ""}`}
+            onClick={() => setPanelOpen(!panelOpen)}
+          >
+            Customize
+          </button>
+        )}
         {!local && (
           <button className="btn small" onClick={share}>
             Share
@@ -174,19 +212,172 @@ export default function BracketPage({
             Sign up to save
           </a>
         )}
-        {canEdit && (
-          <button className="btn small ghost danger" onClick={remove}>
-            Delete
-          </button>
-        )}
       </div>
-      {canEdit && (
-        <p className="hint" style={{ margin: "0 0 12px" }}>
-          Click any match to enter scores or pick a winner.
-        </p>
+
+      {canEdit && panelOpen && (
+        <CustomizePanel
+          data={data}
+          seedEdit={seedEdit}
+          onArrange={arrange}
+          onToggleSeedEdit={startSeedEdit}
+          onChange={onChange}
+          onDelete={remove}
+          onDone={() => {
+            setPanelOpen(false);
+            setSeedEdit(false);
+          }}
+        />
       )}
-      <BracketView data={data} editable={canEdit} onChange={onChange} />
+
+      {seedEdit ? (
+        <div className="seed-edit-banner">
+          <span>
+            <strong>Custom placement:</strong> drag a player onto another to
+            swap them — or tap one, then tap the other.
+          </span>
+          <button
+            className="btn small primary"
+            onClick={() => setSeedEdit(false)}
+          >
+            Done
+          </button>
+        </div>
+      ) : (
+        canEdit && (
+          <p className="hint" style={{ margin: "0 0 12px" }}>
+            Click any match to enter scores, pick a winner, or set a time and
+            location.
+          </p>
+        )
+      )}
+
+      <BracketView
+        data={data}
+        editable={canEdit}
+        onChange={onChange}
+        seedEdit={seedEdit}
+        onSwap={onSwap}
+      />
       {toast && <div className="toast">{toast}</div>}
     </main>
+  );
+}
+
+function CustomizePanel({
+  data,
+  seedEdit,
+  onArrange,
+  onToggleSeedEdit,
+  onChange,
+  onDelete,
+  onDone,
+}: {
+  data: BracketData;
+  seedEdit: boolean;
+  onArrange: (mode: "seeded" | "random") => void;
+  onToggleSeedEdit: () => void;
+  onChange: (next: BracketData) => void;
+  onDelete: () => void;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState(data.name);
+
+  function commitName() {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === data.name) {
+      setName(data.name);
+      return;
+    }
+    onChange({ ...data, name: trimmed.slice(0, 120), updatedAt: Date.now() });
+  }
+
+  function updateParticipant(slotIndex: number, patch: Partial<Participant>) {
+    const slots = data.slots.map((s, i) =>
+      i === slotIndex && s ? { ...s, ...patch } : s
+    );
+    onChange({ ...data, slots, updatedAt: Date.now() });
+  }
+
+  return (
+    <div className="card customize-panel">
+      <div className="customize-section">
+        <h2>Bracket name</h2>
+        <input
+          className="input"
+          value={name}
+          maxLength={120}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          aria-label="Bracket name"
+        />
+      </div>
+
+      <div className="customize-section">
+        <h2>Placement</h2>
+        <p className="hint" style={{ margin: "0 0 10px" }}>
+          How players are arranged in the bracket. Re-arranging clears scores
+          but keeps match locations and times.
+        </p>
+        <div className="placement-row">
+          <button className="chip" onClick={() => onArrange("seeded")}>
+            Seeded (1 vs lowest)
+          </button>
+          <button className="chip" onClick={() => onArrange("random")}>
+            Random draw
+          </button>
+          <button
+            className={`chip${seedEdit ? " active" : ""}`}
+            onClick={onToggleSeedEdit}
+          >
+            Custom — drag &amp; drop
+          </button>
+        </div>
+      </div>
+
+      <div className="customize-section">
+        <h2>Participants</h2>
+        <p className="hint" style={{ margin: "0 0 10px" }}>
+          Edit seeds and names. Positions don&apos;t change — use Placement
+          above to re-arrange.
+        </p>
+        <div className="customize-participants">
+          {data.slots.map((s, i) =>
+            s ? (
+              <div key={i} className="participant-row">
+                <input
+                  className="input seed"
+                  value={s.seed}
+                  maxLength={20}
+                  aria-label={`Seed for ${s.name}`}
+                  onChange={(e) =>
+                    updateParticipant(i, { seed: e.target.value })
+                  }
+                />
+                <input
+                  className="input"
+                  value={s.name}
+                  maxLength={80}
+                  aria-label="Participant name"
+                  onChange={(e) =>
+                    updateParticipant(i, { name: e.target.value })
+                  }
+                />
+              </div>
+            ) : null
+          )}
+        </div>
+      </div>
+
+      <div className="customize-footer">
+        <button className="btn small ghost danger" onClick={onDelete}>
+          Delete bracket
+        </button>
+        <span style={{ flex: 1 }} />
+        <button className="btn small primary" onClick={onDone}>
+          Done
+        </button>
+      </div>
+    </div>
   );
 }

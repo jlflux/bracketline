@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiHandler } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { BracketData } from "@/lib/bracket";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: RouteCtx) {
+export const GET = apiHandler(async (_req: NextRequest, ctx: RouteCtx) => {
   const { id } = await ctx.params;
   const db = await getDb();
   const res = await db.execute({
@@ -20,9 +21,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx) {
     bracket: JSON.parse(String(row.data)),
     canEdit: user?.id === String(row.user_id),
   });
-}
+});
 
-export async function PUT(req: NextRequest, ctx: RouteCtx) {
+export const PUT = apiHandler(async (req: NextRequest, ctx: RouteCtx) => {
   const { id } = await ctx.params;
   const user = await getCurrentUser();
   if (!user)
@@ -63,9 +64,9 @@ export async function PUT(req: NextRequest, ctx: RouteCtx) {
     args: [stored.name, JSON.stringify(stored), now, id],
   });
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
+export const DELETE = apiHandler(async (_req: NextRequest, ctx: RouteCtx) => {
   const { id } = await ctx.params;
   const user = await getCurrentUser();
   if (!user)
@@ -78,4 +79,4 @@ export async function DELETE(_req: NextRequest, ctx: RouteCtx) {
   if (res.rowsAffected === 0)
     return NextResponse.json({ error: "Bracket not found." }, { status: 404 });
   return NextResponse.json({ ok: true });
-}
+});

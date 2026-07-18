@@ -12,6 +12,7 @@ import {
 
 const CARD_W = 220;
 const CARD_H = 71;
+const INFO_H = 24;
 const V_GAP = 18;
 const COL_GAP = 46;
 const LABEL_H = 36;
@@ -20,36 +21,94 @@ type Props = {
   data: BracketData;
   editable: boolean;
   onChange?: (next: BracketData) => void;
+  /** When true, round-1 players can be dragged (or tapped in pairs) to swap
+   *  bracket positions; result editing is disabled. */
+  seedEdit?: boolean;
+  onSwap?: (slotA: number, slotB: number) => void;
 };
 
-export default function BracketView({ data, editable, onChange }: Props) {
+function hasSchedule(r: MatchResult): boolean {
+  return !!(r.location || r.date || r.time);
+}
+
+function formatSchedule(r: MatchResult): string {
+  const parts: string[] = [];
+  if (r.date) {
+    const d = new Date(r.date + "T00:00");
+    if (!isNaN(d.getTime()))
+      parts.push(d.toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+  }
+  if (r.time) {
+    const d = new Date("2000-01-01T" + r.time);
+    parts.push(
+      isNaN(d.getTime())
+        ? r.time
+        : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    );
+  }
+  if (r.location) parts.push(r.location);
+  return parts.join(" · ");
+}
+
+export default function BracketView({
+  data,
+  editable,
+  onChange,
+  seedEdit = false,
+  onSwap,
+}: Props) {
   const computed = useMemo(() => computeBracket(data), [data]);
   const [editing, setEditing] = useState<Match | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [dragSlot, setDragSlot] = useState<number | null>(null);
 
   const numRounds = computed.rounds.length;
-  const firstRoundMatches = computed.rounds[0].length;
-  const width = numRounds * (CARD_W + COL_GAP) - COL_GAP;
-  const height = LABEL_H + firstRoundMatches * (CARD_H + V_GAP) - V_GAP;
 
-  // Vertical center of each match, computed bottom-up from round 1.
-  const centers = useMemo(() => {
-    const c: number[][] = [];
-    for (let r = 0; r < numRounds; r++) {
-      c.push([]);
+  // Card heights vary: matches with schedule info get a footer row.
+  const { centers, heights, width, height } = useMemo(() => {
+    const heights: number[][] = computed.rounds.map((round) =>
+      round.map(
+        (m) => CARD_H + (hasSchedule(m.result) ? INFO_H : 0)
+      )
+    );
+    const centers: number[][] = [];
+    let y = LABEL_H;
+    centers.push([]);
+    for (let i = 0; i < computed.rounds[0].length; i++) {
+      centers[0].push(y + heights[0][i] / 2);
+      y += heights[0][i] + V_GAP;
+    }
+    let maxBottom = y - V_GAP;
+    for (let r = 1; r < numRounds; r++) {
+      centers.push([]);
       for (let i = 0; i < computed.rounds[r].length; i++) {
-        if (r === 0) {
-          c[0].push(LABEL_H + i * (CARD_H + V_GAP) + CARD_H / 2);
-        } else {
-          c[r].push((c[r - 1][i * 2] + c[r - 1][i * 2 + 1]) / 2);
-        }
+        const c = (centers[r - 1][i * 2] + centers[r - 1][i * 2 + 1]) / 2;
+        centers[r].push(c);
+        maxBottom = Math.max(maxBottom, c + heights[r][i] / 2);
       }
     }
-    return c;
+    return {
+      centers,
+      heights,
+      width: numRounds * (CARD_W + COL_GAP) - COL_GAP,
+      height: maxBottom + 4,
+    };
   }, [computed, numRounds]);
 
   function saveResult(match: Match, result: MatchResult) {
     onChange?.(applyResult(data, match.round, match.index, result));
     setEditing(null);
+  }
+
+  function trySwap(a: number, b: number) {
+    setSelectedSlot(null);
+    setDragSlot(null);
+    if (a !== b) onSwap?.(a, b);
+  }
+
+  function slotTap(index: number) {
+    if (selectedSlot === null) setSelectedSlot(index);
+    else trySwap(selectedSlot, index);
   }
 
   const paths: string[] = [];
@@ -91,22 +150,51 @@ export default function BracketView({ data, editable, onChange }: Props) {
 
         {computed.rounds.map((round, r) =>
           round.map((match, i) => {
-            const canEdit =
-              editable && !!match.p1 && !!match.p2 && !match.isBye;
+            const canEditResult =
+              editable && !seedEdit && !!match.p1 && !!match.p2 && !match.isBye;
+            const swappable = seedEdit && r === 0;
             return (
               <div
                 key={match.key}
-                className={`match-card${canEdit ? " clickable" : ""}`}
+                className={`match-card${canEditResult ? " clickable" : ""}${
+                  swappable ? " swappable" : ""
+                }`}
                 style={{
                   left: r * (CARD_W + COL_GAP),
-                  top: centers[r][i] - CARD_H / 2,
+                  top: centers[r][i] - heights[r][i] / 2,
                   width: CARD_W,
                 }}
-                onClick={canEdit ? () => setEditing(match) : undefined}
-                role={canEdit ? "button" : undefined}
+                onClick={canEditResult ? () => setEditing(match) : undefined}
+                role={canEditResult ? "button" : undefined}
               >
-                <Slot match={match} side={1} />
-                <Slot match={match} side={2} />
+                {([1, 2] as const).map((side) => {
+                  const slotIndex = i * 2 + side - 1;
+                  return (
+                    <Slot
+                      key={side}
+                      match={match}
+                      side={side}
+                      swappable={swappable}
+                      selected={swappable && selectedSlot === slotIndex}
+                      dragging={swappable && dragSlot === slotIndex}
+                      onTap={swappable ? () => slotTap(slotIndex) : undefined}
+                      onDragStart={
+                        swappable ? () => setDragSlot(slotIndex) : undefined
+                      }
+                      onDrop={
+                        swappable
+                          ? () =>
+                              dragSlot !== null && trySwap(dragSlot, slotIndex)
+                          : undefined
+                      }
+                    />
+                  );
+                })}
+                {hasSchedule(match.result) && (
+                  <div className="match-info">
+                    {formatSchedule(match.result)}
+                  </div>
+                )}
               </div>
             );
           })
@@ -124,7 +212,25 @@ export default function BracketView({ data, editable, onChange }: Props) {
   );
 }
 
-function Slot({ match, side }: { match: Match; side: 1 | 2 }) {
+function Slot({
+  match,
+  side,
+  swappable,
+  selected,
+  dragging,
+  onTap,
+  onDragStart,
+  onDrop,
+}: {
+  match: Match;
+  side: 1 | 2;
+  swappable?: boolean;
+  selected?: boolean;
+  dragging?: boolean;
+  onTap?: () => void;
+  onDragStart?: () => void;
+  onDrop?: () => void;
+}) {
   const p = side === 1 ? match.p1 : match.p2;
   const score = side === 1 ? match.result.s1 : match.result.s2;
   const decided = match.winner !== null && match.p1 !== null && match.p2 !== null;
@@ -137,8 +243,41 @@ function Slot({ match, side }: { match: Match; side: 1 | 2 }) {
     <div
       className={`match-slot${isWinner ? " winner" : ""}${
         isLoser ? " loser" : ""
+      }${swappable ? " swap-target" : ""}${selected ? " swap-selected" : ""}${
+        dragging ? " swap-dragging" : ""
       }`}
+      draggable={swappable || undefined}
+      onClick={
+        onTap
+          ? (e) => {
+              e.stopPropagation();
+              onTap();
+            }
+          : undefined
+      }
+      onDragStart={
+        onDragStart
+          ? (e) => {
+              e.dataTransfer.effectAllowed = "move";
+              onDragStart();
+            }
+          : undefined
+      }
+      onDragOver={onDrop ? (e) => e.preventDefault() : undefined}
+      onDrop={
+        onDrop
+          ? (e) => {
+              e.preventDefault();
+              onDrop();
+            }
+          : undefined
+      }
     >
+      {swappable && (
+        <span className="drag-grip" aria-hidden>
+          ⋮⋮
+        </span>
+      )}
       {p?.seed ? <span className="seed-tag">{p.seed}</span> : null}
       <span className={`p-name${p ? "" : " tbd"}`}>
         {p ? p.name : isByeSlot ? "Bye" : "TBD"}
@@ -162,6 +301,9 @@ function MatchEditor({
   const [s1, setS1] = useState(match.result.s1?.toString() ?? "");
   const [s2, setS2] = useState(match.result.s2?.toString() ?? "");
   const [winner, setWinner] = useState<1 | 2 | null>(match.result.winner);
+  const [location, setLocation] = useState(match.result.location ?? "");
+  const [date, setDate] = useState(match.result.date ?? "");
+  const [time, setTime] = useState(match.result.time ?? "");
 
   function num(v: string): number | null {
     if (v.trim() === "") return null;
@@ -177,14 +319,22 @@ function MatchEditor({
     if (a !== null && b !== null && a !== b) setWinner(a > b ? 1 : 2);
   }
 
+  function schedule() {
+    return {
+      location: location.trim() || undefined,
+      date: date || undefined,
+      time: time || undefined,
+    };
+  }
+
   function save() {
-    onSave({ s1: num(s1), s2: num(s2), winner });
+    onSave({ s1: num(s1), s2: num(s2), winner, ...schedule() });
   }
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h2>Report result</h2>
+        <h2>Match details</h2>
         <p className="sub">
           Tap a player to mark the winner, or enter scores.
         </p>
@@ -211,12 +361,51 @@ function MatchEditor({
             </div>
           );
         })}
+
+        <div className="schedule-fields">
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label htmlFor="m-loc">Location</label>
+            <input
+              id="m-loc"
+              className="input"
+              placeholder="Court 4, Main Arena…"
+              maxLength={80}
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
+          </div>
+          <div className="schedule-when">
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="m-date">Date</label>
+              <input
+                id="m-date"
+                className="input"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="m-time">Time</label>
+              <input
+                id="m-time"
+                className="input"
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="modal-actions">
           <button
             className="btn ghost danger"
-            onClick={() => onSave({ s1: null, s2: null, winner: null })}
+            onClick={() =>
+              onSave({ s1: null, s2: null, winner: null, ...schedule() })
+            }
           >
-            Clear
+            Clear result
           </button>
           <span className="spacer" />
           <button className="btn" onClick={onClose}>

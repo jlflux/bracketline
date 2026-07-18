@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiHandler } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { hashPassword, createSession, setSessionCookie } from "@/lib/auth";
 import { newId } from "@/lib/bracket";
 
-export async function POST(req: NextRequest) {
+export const POST = apiHandler(async (req: NextRequest) => {
   const body = await req.json().catch(() => null);
   const email = String(body?.email ?? "").trim();
   const username = String(body?.username ?? "").trim();
@@ -41,4 +42,4 @@ export async function POST(req: NextRequest) {
 
   await setSessionCookie(await createSession(id));
   return NextResponse.json({ user: { id, email, username } });
-}
+});

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiHandler } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { verifyPassword, createSession, setSessionCookie } from "@/lib/auth";
 
-export async function POST(req: NextRequest) {
+export const POST = apiHandler(async (req: NextRequest) => {
   const body = await req.json().catch(() => null);
   const email = String(body?.email ?? "").trim();
   const password = String(body?.password ?? "");
@@ -28,4 +29,4 @@ export async function POST(req: NextRequest) {
       username: String(row.username),
     },
   });
-}
+});

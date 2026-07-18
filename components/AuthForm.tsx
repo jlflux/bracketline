@@ -23,8 +23,11 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, username }),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "Something went wrong.");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok)
+        throw new Error(
+          body.error || `Something went wrong (error ${res.status}).`
+        );
       const next = search.get("next");
       router.push(next && next.startsWith("/") ? next : "/dashboard");
       router.refresh();

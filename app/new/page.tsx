@@ -6,7 +6,6 @@ import {
   BracketData,
   MAX_PARTICIPANTS,
   MIN_PARTICIPANTS,
-  Placement,
   buildSlots,
   newId,
 } from "@/lib/bracket";
@@ -21,7 +20,6 @@ export default function NewBracketPage() {
   const [entries, setEntries] = useState<Entry[]>(
     Array.from({ length: 8 }, () => ({ name: "", seed: "" }))
   );
-  const [placement, setPlacement] = useState<Placement>("seeded");
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
@@ -82,7 +80,7 @@ export default function NewBracketPage() {
     const data: BracketData = {
       id: "",
       name: title,
-      slots: buildSlots(participants, placement),
+      slots: buildSlots(participants, "seeded"),
       results: {},
       createdAt: now,
       updatedAt: now,
@@ -95,8 +93,11 @@ export default function NewBracketPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data }),
         });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || "Could not save bracket.");
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok)
+          throw new Error(
+            body.error || `Could not save bracket (error ${res.status}).`
+          );
         router.push(`/b/${body.id}`);
         return;
       } catch (e) {
@@ -152,27 +153,11 @@ export default function NewBracketPage() {
               />
             </div>
           </div>
-          <div className="field">
-            <label>Placement</label>
-            <div className="placement-row">
-              {(
-                [
-                  ["seeded", "Seeded (1 vs lowest)"],
-                  ["linear", "In listed order"],
-                  ["random", "Random draw"],
-                ] as [Placement, string][]
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`chip${placement === value ? " active" : ""}`}
-                  onClick={() => setPlacement(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="hint" style={{ margin: 0 }}>
+            Players start in seeded order (1 vs lowest). You can switch to a
+            random draw or drag players anywhere from the bracket&apos;s
+            Customize menu after creating it.
+          </p>
         </div>
 
         <div className="card builder-card">

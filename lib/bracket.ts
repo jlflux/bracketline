@@ -12,6 +12,10 @@ export type MatchResult = {
   s2: number | null;
   /** 1 = top slot won, 2 = bottom slot won */
   winner: 1 | 2 | null;
+  /** Optional schedule info. date is "YYYY-MM-DD", time is "HH:MM". */
+  location?: string;
+  date?: string;
+  time?: string;
 };
 
 export type BracketData = {
@@ -179,17 +183,85 @@ export function applyResult(
   const prev = results[`${round}-${index}`];
   results[`${round}-${index}`] = result;
   if (prev && prev.winner && prev.winner !== result.winner) {
-    // Winner changed: wipe the path forward.
+    // Winner changed: wipe scores along the path forward (keep schedules).
     let r = round + 1;
     let i = Math.floor(index / 2);
     const numRounds = Math.log2(data.slots.length);
     while (r < numRounds) {
-      delete results[`${r}-${i}`];
+      const key = `${r}-${i}`;
+      const old = results[key];
+      if (old) results[key] = { ...old, s1: null, s2: null, winner: null };
       i = Math.floor(i / 2);
       r++;
     }
   }
   return { ...data, results, updatedAt: Date.now() };
+}
+
+/** Strip scores/winners but keep schedule info (location/date/time), which
+ *  belongs to the match slot rather than to who plays in it. */
+function clearScores(
+  results: Record<string, MatchResult>
+): Record<string, MatchResult> {
+  const out: Record<string, MatchResult> = {};
+  for (const [key, r] of Object.entries(results)) {
+    if (r.location || r.date || r.time)
+      out[key] = { ...r, s1: null, s2: null, winner: null };
+  }
+  return out;
+}
+
+/** Swap two round-1 slots (either may be a bye). Clears scores, since
+ *  matchups change. */
+export function swapSlots(
+  data: BracketData,
+  a: number,
+  b: number
+): BracketData {
+  const slots = [...data.slots];
+  [slots[a], slots[b]] = [slots[b], slots[a]];
+  return {
+    ...data,
+    slots,
+    results: clearScores(data.results),
+    updatedAt: Date.now(),
+  };
+}
+
+/** Natural comparison of seed labels: "2" < "10", "E4" < "E12", ties stable. */
+export function compareSeeds(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+/**
+ * Re-arrange the existing participants into fresh slots.
+ * - "seeded": order participants by their seed label (natural sort), then
+ *   classic 1-vs-lowest placement with byes at the top seeds.
+ * - "random": random draw into the seeded layout.
+ * Clears all results, since matchups change.
+ */
+export function rearrange(
+  data: BracketData,
+  mode: "seeded" | "random"
+): BracketData {
+  const participants = data.slots.filter(
+    (s): s is Participant => s !== null
+  );
+  if (mode === "seeded")
+    participants.sort((a, b) => compareSeeds(a.seed, b.seed));
+  return {
+    ...data,
+    slots: buildSlots(participants, mode),
+    results: clearScores(data.results),
+    updatedAt: Date.now(),
+  };
+}
+
+/** True if any match has a score or winner recorded (schedule info ignored). */
+export function hasProgress(data: BracketData): boolean {
+  return Object.values(data.results).some(
+    (r) => r.winner !== null || r.s1 !== null || r.s2 !== null
+  );
 }
 
 export function roundName(round: number, numRounds: number): string {
