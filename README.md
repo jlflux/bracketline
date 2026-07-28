@@ -14,9 +14,10 @@ themes, a light-blue accent, and a layout that works on desktop and phone.
 - **Placement modes** — seeded (1 vs lowest), in listed order, or random draw.
 - **Scores & winners** — click any match to enter scores or tap a player to
   mark the winner; changing an earlier result clears the affected path.
-- **Accounts** — email/password accounts with cookie sessions; brackets are
-  saved to the server and shareable by link. Guests can build brackets that
-  live in their browser and move them into an account later.
+- **Accounts** — email/password accounts with cookie sessions and
+  self-serve password reset; brackets are saved to the server and shareable
+  by link. Guests can build brackets that live in their browser and move
+  them into an account later.
 - **Light & dark mode** with a light-blue accent, responsive on mobile.
 
 ## Stack
@@ -61,6 +62,14 @@ Vercel's serverless filesystem is ephemeral, so the database lives in
 3. In the project's **Settings → Environment Variables**, add
    `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
 4. Deploy. Tables are created automatically on first use.
+
+### Password-reset emails
+
+Reset links are generated whether or not email is configured — without a key
+they're written to the server logs (visible in Vercel's Runtime Logs) so the
+flow still works. To send real emails, add a `RESEND_API_KEY` from
+[Resend](https://resend.com) and, once you've verified a domain, an
+`EMAIL_FROM` address.
 
 ## Layout
 

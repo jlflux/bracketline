@@ -58,6 +58,67 @@ export async function clearSession() {
   store.delete(SESSION_COOKIE);
 }
 
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function tokenHash(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+/** Issue a single-use reset token. Only its hash is stored, so a database
+ *  leak can't be used to reset anyone's password. */
+export async function createResetToken(userId: string): Promise<string> {
+  const db = await getDb();
+  const token = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
+  // One live token per user.
+  await db.execute({
+    sql: "DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL",
+    args: [userId],
+  });
+  await db.execute({
+    sql: "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+    args: [tokenHash(token), userId, now, now + RESET_TTL_MS],
+  });
+  return token;
+}
+
+/**
+ * Consume a reset token and set the new password. All existing sessions are
+ * dropped so anyone holding the old password is signed out.
+ * Returns the user id, or null if the token is invalid/expired/used.
+ */
+export async function consumeResetToken(
+  token: string,
+  newPassword: string
+): Promise<string | null> {
+  const db = await getDb();
+  const res = await db.execute({
+    sql: "SELECT user_id, expires_at, used_at FROM password_resets WHERE token_hash = ?",
+    args: [tokenHash(token)],
+  });
+  const row = res.rows[0];
+  if (!row) return null;
+  if (row.used_at !== null) return null;
+  if (Number(row.expires_at) < Date.now()) return null;
+
+  const userId = String(row.user_id);
+  await db.batch(
+    [
+      {
+        sql: "UPDATE users SET pass_hash = ? WHERE id = ?",
+        args: [hashPassword(newPassword), userId],
+      },
+      {
+        sql: "UPDATE password_resets SET used_at = ? WHERE token_hash = ?",
+        args: [Date.now(), tokenHash(token)],
+      },
+      { sql: "DELETE FROM sessions WHERE user_id = ?", args: [userId] },
+    ],
+    "write"
+  );
+  return userId;
+}
+
 export async function getCurrentUser(): Promise<User | null> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;

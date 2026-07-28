@@ -248,6 +248,24 @@ textarea {
   color: var(--text-muted);
   font-size: 13.5px;
 }
+.forgot-link {
+  align-self: flex-start;
+}
+.notice {
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+.notice code {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+}
 
 /* ---------- Auth pages ---------- */
 .auth-wrap {

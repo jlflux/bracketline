@@ -86,7 +86,13 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete={isSignup ? "new-password" : "current-password"}
           />
-          {isSignup && <span className="hint">At least 8 characters.</span>}
+          {isSignup ? (
+            <span className="hint">At least 8 characters.</span>
+          ) : (
+            <Link href="/forgot" className="hint forgot-link">
+              Forgot your password?
+            </Link>
+          )}
         </div>
         {error && <p className="error-msg">{error}</p>}
         <button
