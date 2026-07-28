@@ -6,9 +6,11 @@ import {
   Match,
   MatchResult,
   Participant,
-  applyResult,
+  bracketFormat,
   computeBracket,
+  computeDouble,
   roundName,
+  setResult,
 } from "@/lib/bracket";
 
 const CARD_W = 220;
@@ -17,6 +19,7 @@ const INFO_H = 24;
 const V_GAP = 18;
 const COL_GAP = 46;
 const LABEL_H = 36;
+const SECTION_GAP = 64;
 
 type Props = {
   data: BracketData;
@@ -31,27 +34,239 @@ type Props = {
   teamEdit?: boolean;
 };
 
+type Item = { match: Match; x: number; top: number; h: number };
+type Label = { text: string; x: number; y: number };
+type Edge = { x1: number; y1: number; x2: number; y2: number };
+type Layout = {
+  items: Item[];
+  labels: Label[];
+  edges: Edge[];
+  width: number;
+  height: number;
+};
+
 function hasSchedule(r: MatchResult): boolean {
   return !!(r.location || r.date || r.time);
 }
 
-function formatSchedule(r: MatchResult): string {
-  const parts: string[] = [];
-  if (r.date) {
-    const d = new Date(r.date + "T00:00");
-    if (!isNaN(d.getTime()))
-      parts.push(d.toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+function cardH(m: Match): number {
+  return CARD_H + (hasSchedule(m.result) ? INFO_H : 0);
+}
+
+function colX(c: number): number {
+  return c * (CARD_W + COL_GAP);
+}
+
+/** Stack round 0 downward, center later rounds between their feeders. */
+function stackCenters(rounds: Match[][], topY: number): {
+  centers: number[][];
+  bottom: number;
+} {
+  const centers: number[][] = [];
+  let y = topY;
+  centers.push([]);
+  for (const m of rounds[0]) {
+    centers[0].push(y + cardH(m) / 2);
+    y += cardH(m) + V_GAP;
   }
-  if (r.time) {
-    const d = new Date("2000-01-01T" + r.time);
-    parts.push(
-      isNaN(d.getTime())
-        ? r.time
-        : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    );
+  let bottom = y - V_GAP;
+  for (let r = 1; r < rounds.length; r++) {
+    centers.push([]);
+    for (let i = 0; i < rounds[r].length; i++) {
+      const c = (centers[r - 1][i * 2] + centers[r - 1][i * 2 + 1]) / 2;
+      centers[r].push(c);
+      bottom = Math.max(bottom, c + cardH(rounds[r][i]) / 2);
+    }
   }
-  if (r.location) parts.push(r.location);
-  return parts.join(" · ");
+  return { centers, bottom };
+}
+
+function layoutSingle(data: BracketData): Layout {
+  const { rounds } = computeBracket(data);
+  const numRounds = rounds.length;
+  const { centers, bottom } = stackCenters(rounds, LABEL_H);
+
+  const items: Item[] = [];
+  const labels: Label[] = [];
+  const edges: Edge[] = [];
+
+  for (let r = 0; r < numRounds; r++) {
+    labels.push({ text: roundName(r, numRounds), x: colX(r), y: 0 });
+    for (let i = 0; i < rounds[r].length; i++) {
+      const m = rounds[r][i];
+      items.push({ match: m, x: colX(r), top: centers[r][i] - cardH(m) / 2, h: cardH(m) });
+      if (r > 0) {
+        for (const child of [i * 2, i * 2 + 1]) {
+          edges.push({
+            x1: colX(r - 1) + CARD_W,
+            y1: centers[r - 1][child],
+            x2: colX(r),
+            y2: centers[r][i],
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    items,
+    labels,
+    edges,
+    width: colX(numRounds - 1) + CARD_W,
+    height: bottom + 4,
+  };
+}
+
+function layoutDouble(data: BracketData): Layout {
+  const { wb, lb, gf, gf2 } = computeDouble(data);
+  const k = wb.length;
+  const wCol = (r: number) => (r === 0 ? 0 : 2 * r - 1);
+
+  const items: Item[] = [];
+  const labels: Label[] = [];
+  const edges: Edge[] = [];
+
+  // Winners bracket
+  labels.push({ text: "Winners bracket", x: 0, y: 0 });
+  const w = stackCenters(wb, LABEL_H + 26);
+  for (let r = 0; r < k; r++) {
+    labels.push({
+      text: k > 1 && r === k - 1 ? "Winners final" : `Round ${r + 1}`,
+      x: colX(wCol(r)),
+      y: 26,
+    });
+    for (let i = 0; i < wb[r].length; i++) {
+      const m = wb[r][i];
+      items.push({
+        match: m,
+        x: colX(wCol(r)),
+        top: w.centers[r][i] - cardH(m) / 2,
+        h: cardH(m),
+      });
+      if (r > 0) {
+        for (const child of [i * 2, i * 2 + 1]) {
+          edges.push({
+            x1: colX(wCol(r - 1)) + CARD_W,
+            y1: w.centers[r - 1][child],
+            x2: colX(wCol(r)),
+            y2: w.centers[r][i],
+          });
+        }
+      }
+    }
+  }
+
+  // Losers bracket, below
+  const lbLabelY = w.bottom + SECTION_GAP - 26;
+  labels.push({ text: "Losers bracket", x: 0, y: lbLabelY - 26 });
+  const lbRounds = lb.length;
+  const l = stackCenters(
+    // stackCenters expects feeder pairing; losers rounds alternate 1:1 and
+    // 2:1, so compute centers manually below instead.
+    [lb[0]],
+    lbLabelY + 26
+  );
+  const lCenters: number[][] = [l.centers[0]];
+  let lBottom = l.bottom;
+  for (let t = 1; t < lbRounds; t++) {
+    lCenters.push([]);
+    for (let i = 0; i < lb[t].length; i++) {
+      const c =
+        t % 2 === 1
+          ? lCenters[t - 1][i] // drop-down round: aligned with its feeder
+          : (lCenters[t - 1][i * 2] + lCenters[t - 1][i * 2 + 1]) / 2;
+      lCenters[t].push(c);
+      lBottom = Math.max(lBottom, c + cardH(lb[t][i]) / 2);
+    }
+  }
+  for (let t = 0; t < lbRounds; t++) {
+    labels.push({
+      text: t === lbRounds - 1 ? "Losers final" : `Losers rd ${t + 1}`,
+      x: colX(t),
+      y: lbLabelY,
+    });
+    for (let i = 0; i < lb[t].length; i++) {
+      const m = lb[t][i];
+      items.push({
+        match: m,
+        x: colX(t),
+        top: lCenters[t][i] - cardH(m) / 2,
+        h: cardH(m),
+      });
+      if (t % 2 === 1) {
+        edges.push({
+          x1: colX(t - 1) + CARD_W,
+          y1: lCenters[t - 1][i],
+          x2: colX(t),
+          y2: lCenters[t][i],
+        });
+      } else if (t > 0) {
+        for (const child of [i * 2, i * 2 + 1]) {
+          edges.push({
+            x1: colX(t - 1) + CARD_W,
+            y1: lCenters[t - 1][child],
+            x2: colX(t),
+            y2: lCenters[t][i],
+          });
+        }
+      }
+    }
+  }
+
+  // Grand final column(s)
+  const wbFinalCenter = w.centers[k - 1][0];
+  const lbFinalCenter = lCenters[lbRounds - 1][0];
+  const gfCol = Math.max(wCol(k - 1), lbRounds - 1) + 1;
+  const gfCenter = (wbFinalCenter + lbFinalCenter) / 2;
+  labels.push({ text: "Grand final", x: colX(gfCol), y: gfCenter - cardH(gf) / 2 - 26 });
+  items.push({
+    match: gf,
+    x: colX(gfCol),
+    top: gfCenter - cardH(gf) / 2,
+    h: cardH(gf),
+  });
+  edges.push({
+    x1: colX(wCol(k - 1)) + CARD_W,
+    y1: wbFinalCenter,
+    x2: colX(gfCol),
+    y2: gfCenter,
+  });
+  edges.push({
+    x1: colX(lbRounds - 1) + CARD_W,
+    y1: lbFinalCenter,
+    x2: colX(gfCol),
+    y2: gfCenter,
+  });
+
+  let lastCol = gfCol;
+  if (gf2) {
+    lastCol = gfCol + 1;
+    labels.push({
+      text: "Reset — winner takes all",
+      x: colX(lastCol),
+      y: gfCenter - cardH(gf2) / 2 - 26,
+    });
+    items.push({
+      match: gf2,
+      x: colX(lastCol),
+      top: gfCenter - cardH(gf2) / 2,
+      h: cardH(gf2),
+    });
+    edges.push({
+      x1: colX(gfCol) + CARD_W,
+      y1: gfCenter,
+      x2: colX(lastCol),
+      y2: gfCenter,
+    });
+  }
+
+  return {
+    items,
+    labels,
+    edges,
+    width: colX(lastCol) + CARD_W,
+    height: Math.max(lBottom, gfCenter + cardH(gf) / 2) + 4,
+  };
 }
 
 export default function BracketView({
@@ -62,47 +277,21 @@ export default function BracketView({
   onSwap,
   teamEdit = false,
 }: Props) {
-  const computed = useMemo(() => computeBracket(data), [data]);
   const [editing, setEditing] = useState<Match | null>(null);
   const [teamEditing, setTeamEditing] = useState<Match | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [dragSlot, setDragSlot] = useState<number | null>(null);
 
-  const numRounds = computed.rounds.length;
-
-  // Card heights vary: matches with schedule info get a footer row.
-  const { centers, heights, width, height } = useMemo(() => {
-    const heights: number[][] = computed.rounds.map((round) =>
-      round.map(
-        (m) => CARD_H + (hasSchedule(m.result) ? INFO_H : 0)
-      )
-    );
-    const centers: number[][] = [];
-    let y = LABEL_H;
-    centers.push([]);
-    for (let i = 0; i < computed.rounds[0].length; i++) {
-      centers[0].push(y + heights[0][i] / 2);
-      y += heights[0][i] + V_GAP;
-    }
-    let maxBottom = y - V_GAP;
-    for (let r = 1; r < numRounds; r++) {
-      centers.push([]);
-      for (let i = 0; i < computed.rounds[r].length; i++) {
-        const c = (centers[r - 1][i * 2] + centers[r - 1][i * 2 + 1]) / 2;
-        centers[r].push(c);
-        maxBottom = Math.max(maxBottom, c + heights[r][i] / 2);
-      }
-    }
-    return {
-      centers,
-      heights,
-      width: numRounds * (CARD_W + COL_GAP) - COL_GAP,
-      height: maxBottom + 4,
-    };
-  }, [computed, numRounds]);
+  const layout = useMemo(
+    () =>
+      bracketFormat(data) === "double"
+        ? layoutDouble(data)
+        : layoutSingle(data),
+    [data]
+  );
 
   function saveResult(match: Match, result: MatchResult) {
-    onChange?.(applyResult(data, match.round, match.index, result));
+    onChange?.(setResult(data, match, result));
     setEditing(null);
   }
 
@@ -124,108 +313,98 @@ export default function BracketView({
     else trySwap(selectedSlot, index);
   }
 
-  const paths: string[] = [];
-  for (let r = 1; r < numRounds; r++) {
-    for (let i = 0; i < computed.rounds[r].length; i++) {
-      const x2 = r * (CARD_W + COL_GAP);
-      const y2 = centers[r][i];
-      const x1 = x2 - COL_GAP;
-      const mx = x1 + COL_GAP / 2;
-      for (const child of [i * 2, i * 2 + 1]) {
-        const y1 = centers[r - 1][child];
-        paths.push(`M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`);
-      }
-    }
-  }
-
   return (
     <div className="bracket-scroller">
-      <div className="bracket-canvas" style={{ width, height }}>
+      <div
+        className="bracket-canvas"
+        style={{ width: layout.width, height: layout.height }}
+      >
         <svg
-          width={width}
-          height={height}
+          width={layout.width}
+          height={layout.height}
           style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
         >
-          {paths.map((d, i) => (
-            <path key={i} d={d} className="connector-path" />
-          ))}
+          {layout.edges.map((e, i) => {
+            const mx = (e.x1 + e.x2) / 2;
+            return (
+              <path
+                key={i}
+                d={`M ${e.x1} ${e.y1} L ${mx} ${e.y1} L ${mx} ${e.y2} L ${e.x2} ${e.y2}`}
+                className="connector-path"
+              />
+            );
+          })}
         </svg>
 
-        {computed.rounds.map((round, r) => (
+        {layout.labels.map((lab, i) => (
           <div
-            key={`label-${r}`}
+            key={i}
             className="round-label"
-            style={{ left: r * (CARD_W + COL_GAP), width: CARD_W }}
+            style={{ left: lab.x, top: lab.y, width: CARD_W + COL_GAP }}
           >
-            {roundName(r, numRounds)}
+            {lab.text}
           </div>
         ))}
 
-        {computed.rounds.map((round, r) =>
-          round.map((match, i) => {
-            const canEditTeams =
-              editable && teamEdit && !seedEdit && !!(match.p1 || match.p2);
-            const canEditResult =
-              editable &&
-              !seedEdit &&
-              !teamEdit &&
-              !!match.p1 &&
-              !!match.p2 &&
-              !match.isBye;
-            const swappable = seedEdit && r === 0;
-            const onClick = canEditTeams
-              ? () => setTeamEditing(match)
-              : canEditResult
-                ? () => setEditing(match)
-                : undefined;
-            return (
-              <div
-                key={match.key}
-                className={`match-card${
-                  canEditResult ? " clickable" : ""
-                }${canEditTeams ? " team-editable" : ""}${
-                  swappable ? " swappable" : ""
-                }`}
-                style={{
-                  left: r * (CARD_W + COL_GAP),
-                  top: centers[r][i] - heights[r][i] / 2,
-                  width: CARD_W,
-                }}
-                onClick={onClick}
-                role={onClick ? "button" : undefined}
-              >
-                {([1, 2] as const).map((side) => {
-                  const slotIndex = i * 2 + side - 1;
-                  return (
-                    <Slot
-                      key={side}
-                      match={match}
-                      side={side}
-                      swappable={swappable}
-                      selected={swappable && selectedSlot === slotIndex}
-                      dragging={swappable && dragSlot === slotIndex}
-                      onTap={swappable ? () => slotTap(slotIndex) : undefined}
-                      onDragStart={
-                        swappable ? () => setDragSlot(slotIndex) : undefined
-                      }
-                      onDrop={
-                        swappable
-                          ? () =>
-                              dragSlot !== null && trySwap(dragSlot, slotIndex)
-                          : undefined
-                      }
-                    />
-                  );
-                })}
-                {hasSchedule(match.result) && (
-                  <div className="match-info">
-                    {formatSchedule(match.result)}
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
+        {layout.items.map(({ match, x, top }) => {
+          const canEditTeams =
+            editable && teamEdit && !seedEdit && !!(match.p1 || match.p2);
+          const canEditResult =
+            editable &&
+            !seedEdit &&
+            !teamEdit &&
+            !!match.p1 &&
+            !!match.p2 &&
+            !match.isBye;
+          const swappable =
+            seedEdit && match.section === "w" && match.round === 0;
+          const onClick = canEditTeams
+            ? () => setTeamEditing(match)
+            : canEditResult
+              ? () => setEditing(match)
+              : undefined;
+          return (
+            <div
+              key={match.key}
+              className={`match-card${canEditResult ? " clickable" : ""}${
+                canEditTeams ? " team-editable" : ""
+              }${swappable ? " swappable" : ""}`}
+              style={{ left: x, top, width: CARD_W }}
+              onClick={onClick}
+              role={onClick ? "button" : undefined}
+            >
+              {match.num && bracketFormat(data) === "double" && (
+                <span className="match-num">{match.num}</span>
+              )}
+              {([1, 2] as const).map((side) => {
+                const slotIndex = match.index * 2 + side - 1;
+                return (
+                  <Slot
+                    key={side}
+                    match={match}
+                    side={side}
+                    swappable={swappable}
+                    selected={swappable && selectedSlot === slotIndex}
+                    dragging={swappable && dragSlot === slotIndex}
+                    onTap={swappable ? () => slotTap(slotIndex) : undefined}
+                    onDragStart={
+                      swappable ? () => setDragSlot(slotIndex) : undefined
+                    }
+                    onDrop={
+                      swappable
+                        ? () =>
+                            dragSlot !== null && trySwap(dragSlot, slotIndex)
+                        : undefined
+                    }
+                  />
+                );
+              })}
+              {hasSchedule(match.result) && (
+                <div className="match-info">{formatSchedule(match.result)}</div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {editing && (
@@ -246,78 +425,28 @@ export default function BracketView({
   );
 }
 
-function TeamEditor({
-  match,
-  onSave,
-  onClose,
-}: {
-  match: Match;
-  onSave: (edited: Participant[]) => void;
-  onClose: () => void;
-}) {
-  const present = [match.p1, match.p2].filter(
-    (p): p is Participant => p !== null
-  );
-  const [teams, setTeams] = useState<Participant[]>(
-    present.map((p) => ({ ...p }))
-  );
-
-  function update(idx: number, patch: Partial<Participant>) {
-    setTeams((prev) =>
-      prev.map((t, i) => (i === idx ? { ...t, ...patch } : t))
+function formatSchedule(r: MatchResult): string {
+  const parts: string[] = [];
+  if (r.date) {
+    const d = new Date(r.date + "T00:00");
+    if (!isNaN(d.getTime()))
+      parts.push(
+        d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      );
+  }
+  if (r.time) {
+    const d = new Date("2000-01-01T" + r.time);
+    parts.push(
+      isNaN(d.getTime())
+        ? r.time
+        : d.toLocaleTimeString(undefined, {
+            hour: "numeric",
+            minute: "2-digit",
+          })
     );
   }
-
-  function save() {
-    onSave(
-      teams.map((t, i) => ({
-        ...t,
-        name: t.name.trim() || present[i].name,
-        seed: t.seed.trim(),
-      }))
-    );
-  }
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h2>Edit teams</h2>
-        <p className="sub">
-          Change each team&apos;s seed and name. This applies everywhere they
-          appear in the bracket.
-        </p>
-        {teams.map((t, i) => (
-          <div key={t.id} className="participant-row">
-            <input
-              className="input seed"
-              value={t.seed}
-              maxLength={20}
-              placeholder="Seed"
-              aria-label={`Seed for ${present[i].name}`}
-              onChange={(e) => update(i, { seed: e.target.value })}
-            />
-            <input
-              className="input"
-              value={t.name}
-              maxLength={80}
-              placeholder={present[i].name}
-              aria-label={`Name for team ${i + 1}`}
-              onChange={(e) => update(i, { name: e.target.value })}
-            />
-          </div>
-        ))}
-        <div className="modal-actions">
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn primary" onClick={save}>
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  if (r.location) parts.push(r.location);
+  return parts.join(" · ");
 }
 
 function Slot({
@@ -341,10 +470,12 @@ function Slot({
 }) {
   const p = side === 1 ? match.p1 : match.p2;
   const score = side === 1 ? match.result.s1 : match.result.s2;
-  const decided = match.winner !== null && match.p1 !== null && match.p2 !== null;
+  const decided =
+    match.winner !== null && match.p1 !== null && match.p2 !== null;
   const isWinner = decided && match.result.winner === side;
   const isLoser = decided && match.result.winner !== null && !isWinner;
   const sideAlive = side === 1 ? match.p1Alive : match.p2Alive;
+  const from = side === 1 ? match.p1From : match.p2From;
   const isByeSlot = !p && !sideAlive;
 
   return (
@@ -388,7 +519,7 @@ function Slot({
       )}
       {p?.seed ? <span className="seed-tag">{p.seed}</span> : null}
       <span className={`p-name${p ? "" : " tbd"}`}>
-        {p ? p.name : isByeSlot ? "Bye" : "TBD"}
+        {p ? p.name : isByeSlot ? "Bye" : (from ?? "TBD")}
       </span>
       {score !== null && score !== undefined && (
         <span className="score">{score}</span>
@@ -442,10 +573,8 @@ function MatchEditor({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h2>Match details</h2>
-        <p className="sub">
-          Tap a player to mark the winner, or enter scores.
-        </p>
+        <h2>Match details{match.num ? ` — ${match.num}` : ""}</h2>
+        <p className="sub">Tap a player to mark the winner, or enter scores.</p>
         {([1, 2] as const).map((side) => {
           const p = side === 1 ? match.p1 : match.p2;
           return (
@@ -515,6 +644,80 @@ function MatchEditor({
           >
             Clear result
           </button>
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={save}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TeamEditor({
+  match,
+  onSave,
+  onClose,
+}: {
+  match: Match;
+  onSave: (edited: Participant[]) => void;
+  onClose: () => void;
+}) {
+  const present = [match.p1, match.p2].filter(
+    (p): p is Participant => p !== null
+  );
+  const [teams, setTeams] = useState<Participant[]>(
+    present.map((p) => ({ ...p }))
+  );
+
+  function update(idx: number, patch: Partial<Participant>) {
+    setTeams((prev) =>
+      prev.map((t, i) => (i === idx ? { ...t, ...patch } : t))
+    );
+  }
+
+  function save() {
+    onSave(
+      teams.map((t, i) => ({
+        ...t,
+        name: t.name.trim() || present[i].name,
+        seed: t.seed.trim(),
+      }))
+    );
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal card" onClick={(e) => e.stopPropagation()}>
+        <h2>Edit teams</h2>
+        <p className="sub">
+          Change each team&apos;s seed and name. This applies everywhere they
+          appear in the bracket.
+        </p>
+        {teams.map((t, i) => (
+          <div key={t.id} className="participant-row">
+            <input
+              className="input seed"
+              value={t.seed}
+              maxLength={20}
+              placeholder="Seed"
+              aria-label={`Seed for ${present[i].name}`}
+              onChange={(e) => update(i, { seed: e.target.value })}
+            />
+            <input
+              className="input"
+              value={t.name}
+              maxLength={80}
+              placeholder={present[i].name}
+              aria-label={`Name for team ${i + 1}`}
+              onChange={(e) => update(i, { name: e.target.value })}
+            />
+          </div>
+        ))}
+        <div className="modal-actions">
           <span className="spacer" />
           <button className="btn" onClick={onClose}>
             Cancel

@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import BracketView from "@/components/BracketView";
 import {
   BracketData,
-  computeBracket,
+  BracketFormat,
+  bracketChampion,
+  bracketFormat,
   hasProgress,
   participantCount,
   rearrange,
@@ -178,7 +180,7 @@ export default function BracketPage({
 
   if (!data) return null;
 
-  const champion = computeBracket(data).champion;
+  const champion = bracketChampion(data);
 
   return (
     <main className="container" style={{ maxWidth: 1400 }}>
@@ -311,6 +313,32 @@ function CustomizePanel({
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           aria-label="Bracket name"
         />
+      </div>
+
+      <div className="customize-section">
+        <h2>Format</h2>
+        <p className="hint" style={{ margin: "0 0 10px" }}>
+          Switching keeps recorded results — losers-bracket games are simply
+          hidden in single elimination.
+        </p>
+        <div className="placement-row">
+          {(
+            [
+              ["single", "Single elimination"],
+              ["double", "Double elimination"],
+            ] as [BracketFormat, string][]
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              className={`chip${bracketFormat(data) === value ? " active" : ""}`}
+              onClick={() =>
+                onChange({ ...data, format: value, updatedAt: Date.now() })
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="customize-section">

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BracketData,
+  BracketFormat,
   MAX_PARTICIPANTS,
   MIN_PARTICIPANTS,
   buildSlots,
@@ -20,6 +21,7 @@ export default function NewBracketPage() {
   const [entries, setEntries] = useState<Entry[]>(
     Array.from({ length: 8 }, () => ({ name: "", seed: "" }))
   );
+  const [format, setFormat] = useState<BracketFormat>("single");
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
@@ -80,6 +82,7 @@ export default function NewBracketPage() {
     const data: BracketData = {
       id: "",
       name: title,
+      format,
       slots: buildSlots(participants, "seeded"),
       results: {},
       createdAt: now,
@@ -151,6 +154,26 @@ export default function NewBracketPage() {
                 value={count}
                 onChange={(e) => resize(Number(e.target.value) || count)}
               />
+            </div>
+          </div>
+          <div className="field">
+            <label>Format</label>
+            <div className="placement-row">
+              {(
+                [
+                  ["single", "Single elimination"],
+                  ["double", "Double elimination"],
+                ] as [BracketFormat, string][]
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`chip${format === value ? " active" : ""}`}
+                  onClick={() => setFormat(value)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
           <p className="hint" style={{ margin: 0 }}>

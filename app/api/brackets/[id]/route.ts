@@ -55,6 +55,7 @@ export const PUT = apiHandler(async (req: NextRequest, ctx: RouteCtx) => {
   const stored: BracketData = {
     ...existing,
     name: incoming.name.trim().slice(0, 120),
+    format: incoming.format === "double" ? "double" : "single",
     slots: incoming.slots,
     results: incoming.results ?? {},
     updatedAt: now,
