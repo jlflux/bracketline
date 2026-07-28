@@ -27,10 +27,24 @@ export type MatchResult = {
 
 export type BracketFormat = "single" | "double";
 
+/** Optional round-robin phase played before the knockout bracket. */
+export type GroupStage = {
+  /** How many advance from each group (1-8). */
+  advance: number;
+  /** Participants per group, in listed order. */
+  groups: Participant[][];
+  /** Round-robin results keyed "g{group}-{i}-{j}" with i < j (member indexes). */
+  results: Record<string, MatchResult>;
+  /** Manual advancement overrides: group index -> ordered participant ids.
+   *  Used instead of computed standings (e.g. complicated tiebreakers). */
+  overrides: Record<string, string[]>;
+};
+
 export type BracketData = {
   id: string;
   name: string;
   format?: BracketFormat; // absent = "single" (pre-format brackets)
+  groupStage?: GroupStage;
   /** Slot layout for round 1, length = bracket size (power of two). null = bye. */
   slots: (Participant | null)[];
   /** Results keyed by match key ("r-i" winners, "Lr-i" losers, "GF", "GF2"). */
@@ -440,7 +454,7 @@ export function setResult(
 
 /** Strip scores/winners but keep schedule info (location/date/time), which
  *  belongs to the match slot rather than to who plays in it. */
-function clearScores(
+export function clearScoresKeepSchedules(
   results: Record<string, MatchResult>
 ): Record<string, MatchResult> {
   const out: Record<string, MatchResult> = {};
@@ -470,7 +484,7 @@ export function swapSlots(
   return {
     ...data,
     slots,
-    results: clearScores(data.results),
+    results: clearScoresKeepSchedules(data.results),
     updatedAt: Date.now(),
   };
 }
@@ -499,7 +513,7 @@ export function rearrange(
   return {
     ...data,
     slots: buildSlots(participants, mode),
-    results: clearScores(data.results),
+    results: clearScoresKeepSchedules(data.results),
     updatedAt: Date.now(),
   };
 }
@@ -520,7 +534,180 @@ export function roundName(round: number, numRounds: number): string {
 }
 
 export function participantCount(data: BracketData): number {
+  if (data.groupStage)
+    return data.groupStage.groups.reduce((n, g) => n + g.length, 0);
   return data.slots.filter(Boolean).length;
+}
+
+/* ---------------- Group stage ---------------- */
+
+export const MAX_GROUP_SIZE = 8;
+export const MAX_GROUPS = 16;
+
+export function groupLetter(i: number): string {
+  return String.fromCharCode(65 + i);
+}
+
+/** Snake-distribute participants (in entry order) across groups so strength
+ *  spreads evenly: A,B,C,C,B,A,... */
+export function distributeGroups(
+  participants: Participant[],
+  count: number
+): Participant[][] {
+  const groups: Participant[][] = Array.from({ length: count }, () => []);
+  participants.forEach((p, i) => {
+    const lap = Math.floor(i / count);
+    const pos = i % count;
+    groups[lap % 2 === 0 ? pos : count - 1 - pos].push(p);
+  });
+  return groups;
+}
+
+/** Round-robin schedule (circle method): rounds of [i, j] member-index pairs,
+ *  i < j. */
+export function roundRobinRounds(n: number): [number, number][][] {
+  if (n < 2) return [];
+  const teams = [...Array(n).keys()];
+  if (n % 2 === 1) teams.push(-1);
+  const m = teams.length;
+  const rounds: [number, number][][] = [];
+  for (let r = 0; r < m - 1; r++) {
+    const pairs: [number, number][] = [];
+    for (let i = 0; i < m / 2; i++) {
+      const a = teams[i];
+      const b = teams[m - 1 - i];
+      if (a !== -1 && b !== -1) pairs.push(a < b ? [a, b] : [b, a]);
+    }
+    rounds.push(pairs);
+    teams.splice(1, 0, teams.pop()!);
+  }
+  return rounds;
+}
+
+export function groupMatchKey(gi: number, i: number, j: number): string {
+  return `g${gi}-${i}-${j}`;
+}
+
+export type StandingRow = {
+  p: Participant;
+  index: number;
+  played: number;
+  w: number;
+  l: number;
+  pf: number;
+  pa: number;
+};
+
+/** Standings for one group: wins, then score diff, then points scored, then
+ *  listed order. (Deeper tiebreaks are what the manual override is for.) */
+export function groupStandings(stage: GroupStage, gi: number): StandingRow[] {
+  const group = stage.groups[gi];
+  const rows: StandingRow[] = group.map((p, index) => ({
+    p,
+    index,
+    played: 0,
+    w: 0,
+    l: 0,
+    pf: 0,
+    pa: 0,
+  }));
+  for (let i = 0; i < group.length; i++) {
+    for (let j = i + 1; j < group.length; j++) {
+      const r = stage.results[groupMatchKey(gi, i, j)];
+      if (!r || !r.winner) continue;
+      rows[i].played++;
+      rows[j].played++;
+      if (r.s1 !== null && r.s2 !== null) {
+        rows[i].pf += r.s1;
+        rows[i].pa += r.s2;
+        rows[j].pf += r.s2;
+        rows[j].pa += r.s1;
+      }
+      if (r.winner === 1) {
+        rows[i].w++;
+        rows[j].l++;
+      } else {
+        rows[j].w++;
+        rows[i].l++;
+      }
+    }
+  }
+  return [...rows].sort(
+    (a, b) =>
+      b.w - a.w ||
+      b.pf - b.pa - (a.pf - a.pa) ||
+      b.pf - a.pf ||
+      a.index - b.index
+  );
+}
+
+/** Who advances from a group: the manual override if set (padded from
+ *  standings if short), else the standings top N. */
+export function groupQualifiers(stage: GroupStage, gi: number): Participant[] {
+  const standings = groupStandings(stage, gi).map((r) => r.p);
+  const override = stage.overrides[String(gi)];
+  let picked: Participant[];
+  if (override && override.length > 0) {
+    const byId = new Map(stage.groups[gi].map((p) => [p.id, p]));
+    picked = override
+      .map((id) => byId.get(id))
+      .filter((p): p is Participant => !!p);
+    for (const p of standings) {
+      if (picked.length >= stage.advance) break;
+      if (!picked.some((q) => q.id === p.id)) picked.push(p);
+    }
+  } else {
+    picked = standings;
+  }
+  return picked.slice(0, stage.advance);
+}
+
+/** Order qualifiers rank-major (all winners, then all runners-up, …) so the
+ *  seeded 1-vs-lowest placement pairs group winners with runners-up from
+ *  other groups (A1 vs B2, B1 vs A2). Odd group counts rotate later ranks to
+ *  avoid same-group first-round rematches. */
+function orderQualifiers<T>(perGroup: T[][], advance: number): T[] {
+  const G = perGroup.length;
+  const out: T[] = [];
+  for (let r = 0; r < advance; r++) {
+    const rot = G % 2 === 1 ? r % G : 0;
+    for (let g = 0; g < G; g++) out.push(perGroup[(g + rot) % G][r]);
+  }
+  return out;
+}
+
+/** Placeholder entries (A1, B2, …) for a knockout that hasn't been filled
+ *  from the group standings yet. */
+export function qualifierPlaceholders(
+  groupCount: number,
+  advance: number
+): Participant[] {
+  const perGroup = Array.from({ length: groupCount }, (_, g) =>
+    Array.from({ length: advance }, (_, r) => ({
+      id: `q${g}-${r}`,
+      name: `${groupLetter(g)}${r + 1}`,
+      seed: `${groupLetter(g)}${r + 1}`,
+    }))
+  );
+  return orderQualifiers(perGroup, advance);
+}
+
+/** Rebuild the knockout slots from current group standings/overrides.
+ *  Knockout scores are cleared (schedules kept); group results untouched. */
+export function fillKnockout(data: BracketData): BracketData {
+  const stage = data.groupStage;
+  if (!stage) return data;
+  const perGroup = stage.groups.map((_, gi) => groupQualifiers(stage, gi));
+  const ordered = orderQualifiers(perGroup, stage.advance).map((p, i) => ({
+    ...p,
+    seed: p.seed || String(i + 1),
+  }));
+  return {
+    ...data,
+    slots: buildSlots(ordered, "seeded"),
+    results: clearScoresKeepSchedules(data.results),
+    updatedAt: Date.now(),
+  };
 }
 
 export function newId(prefix = ""): string {

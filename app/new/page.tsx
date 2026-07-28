@@ -5,10 +5,14 @@ import { useRouter } from "next/navigation";
 import {
   BracketData,
   BracketFormat,
+  MAX_GROUPS,
+  MAX_GROUP_SIZE,
   MAX_PARTICIPANTS,
   MIN_PARTICIPANTS,
   buildSlots,
+  distributeGroups,
   newId,
+  qualifierPlaceholders,
 } from "@/lib/bracket";
 import { saveLocal } from "@/lib/localBrackets";
 
@@ -22,6 +26,9 @@ export default function NewBracketPage() {
     Array.from({ length: 8 }, () => ({ name: "", seed: "" }))
   );
   const [format, setFormat] = useState<BracketFormat>("single");
+  const [groupsOn, setGroupsOn] = useState(false);
+  const [groupCount, setGroupCount] = useState(2);
+  const [advance, setAdvance] = useState(2);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
@@ -76,6 +83,31 @@ export default function NewBracketPage() {
       seed: e.seed.trim() || String(i + 1),
     }));
 
+    if (groupsOn) {
+      const maxSize = Math.ceil(participants.length / groupCount);
+      const minSize = Math.floor(participants.length / groupCount);
+      if (minSize < 2) {
+        setError(
+          `${groupCount} groups need at least ${groupCount * 2} players (every group needs 2+).`
+        );
+        return;
+      }
+      if (maxSize > MAX_GROUP_SIZE) {
+        setError(
+          `Groups max out at ${MAX_GROUP_SIZE} players — use at least ${Math.ceil(
+            participants.length / MAX_GROUP_SIZE
+          )} groups for ${participants.length} players.`
+        );
+        return;
+      }
+      if (advance > minSize) {
+        setError(
+          `Can't advance top ${advance} from groups of ${minSize} — lower the advance count or use fewer groups.`
+        );
+        return;
+      }
+    }
+
     setBusy(true);
     setError("");
     const now = Date.now();
@@ -83,7 +115,17 @@ export default function NewBracketPage() {
       id: "",
       name: title,
       format,
-      slots: buildSlots(participants, "seeded"),
+      groupStage: groupsOn
+        ? {
+            advance,
+            groups: distributeGroups(participants, groupCount),
+            results: {},
+            overrides: {},
+          }
+        : undefined,
+      slots: groupsOn
+        ? buildSlots(qualifierPlaceholders(groupCount, advance), "seeded")
+        : buildSlots(participants, "seeded"),
       results: {},
       createdAt: now,
       updatedAt: now,
@@ -176,6 +218,70 @@ export default function NewBracketPage() {
               ))}
             </div>
           </div>
+          <div className="field">
+            <label>Group stage</label>
+            <div className="placement-row">
+              <button
+                type="button"
+                className={`chip${!groupsOn ? " active" : ""}`}
+                onClick={() => setGroupsOn(false)}
+              >
+                Straight to bracket
+              </button>
+              <button
+                type="button"
+                className={`chip${groupsOn ? " active" : ""}`}
+                onClick={() => setGroupsOn(true)}
+              >
+                Groups first
+              </button>
+            </div>
+          </div>
+          {groupsOn && (
+            <div className="group-config">
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="gcount">Groups</label>
+                <select
+                  id="gcount"
+                  className="input"
+                  value={groupCount}
+                  onChange={(e) => setGroupCount(Number(e.target.value))}
+                >
+                  {Array.from({ length: MAX_GROUPS - 1 }, (_, i) => i + 2).map(
+                    (n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    )
+                  )}
+                </select>
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="gadv">Advance per group</label>
+                <select
+                  id="gadv"
+                  className="input"
+                  value={advance}
+                  onChange={(e) => setAdvance(Number(e.target.value))}
+                >
+                  {Array.from({ length: 8 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      Top {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="hint" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                {count} players → {groupCount} round-robin groups of{" "}
+                {Math.ceil(count / groupCount)}
+                {count % groupCount !== 0
+                  ? `–${Math.floor(count / groupCount)}`
+                  : ""}{" "}
+                → {groupCount * advance} advance to the knockout. You can
+                override who advances from each group later.
+              </p>
+            </div>
+          )}
           <p className="hint" style={{ margin: 0 }}>
             Players start in seeded order (1 vs lowest). You can switch to a
             random draw or drag players anywhere from the bracket&apos;s

@@ -156,6 +156,49 @@ function layoutDouble(data: BracketData): Layout {
     }
   }
 
+  // Tiny knockout (2 qualifiers): no losers bracket, just final + GF.
+  if (lb.length === 0) {
+    const gfCol = wCol(k - 1) + 1;
+    const gfCenter = w.centers[k - 1][0];
+    labels.push({ text: "Grand final", x: colX(gfCol), y: 26 });
+    items.push({
+      match: gf,
+      x: colX(gfCol),
+      top: gfCenter - cardH(gf) / 2,
+      h: cardH(gf),
+    });
+    edges.push({
+      x1: colX(wCol(k - 1)) + CARD_W,
+      y1: w.centers[k - 1][0],
+      x2: colX(gfCol),
+      y2: gfCenter,
+    });
+    let lastCol = gfCol;
+    if (gf2) {
+      lastCol = gfCol + 1;
+      labels.push({ text: "Reset — winner takes all", x: colX(lastCol), y: 26 });
+      items.push({
+        match: gf2,
+        x: colX(lastCol),
+        top: gfCenter - cardH(gf2) / 2,
+        h: cardH(gf2),
+      });
+      edges.push({
+        x1: colX(gfCol) + CARD_W,
+        y1: gfCenter,
+        x2: colX(lastCol),
+        y2: gfCenter,
+      });
+    }
+    return {
+      items,
+      labels,
+      edges,
+      width: colX(lastCol) + CARD_W,
+      height: w.bottom + 4,
+    };
+  }
+
   // Losers bracket, below
   const lbLabelY = w.bottom + SECTION_GAP - 26;
   labels.push({ text: "Losers bracket", x: 0, y: lbLabelY - 26 });
@@ -528,7 +571,7 @@ function Slot({
   );
 }
 
-function MatchEditor({
+export function MatchEditor({
   match,
   onSave,
   onClose,
@@ -657,7 +700,7 @@ function MatchEditor({
   );
 }
 
-function TeamEditor({
+export function TeamEditor({
   match,
   onSave,
   onClose,

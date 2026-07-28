@@ -39,8 +39,25 @@ function validate(data: unknown): data is BracketData {
   if (!Array.isArray(d.slots)) return false;
   const size = d.slots.length;
   if (size < 4 || size > 256 || (size & (size - 1)) !== 0) return false;
+  // A knockout fed by a group stage can have as few as 2 qualifier slots.
   const n = d.slots.filter(Boolean).length;
-  if (n < MIN_PARTICIPANTS || n > MAX_PARTICIPANTS) return false;
+  const min = d.groupStage ? 2 : MIN_PARTICIPANTS;
+  if (n < min || n > MAX_PARTICIPANTS) return false;
+  if (d.groupStage) {
+    const g = d.groupStage;
+    if (!Array.isArray(g.groups) || g.groups.length < 2) return false;
+    const total = g.groups.reduce(
+      (s: number, grp: unknown) => s + (Array.isArray(grp) ? grp.length : 0),
+      0
+    );
+    if (total < MIN_PARTICIPANTS || total > MAX_PARTICIPANTS) return false;
+    if (
+      typeof g.advance !== "number" ||
+      g.advance < 1 ||
+      g.advance > 8
+    )
+      return false;
+  }
   for (const s of d.slots) {
     if (s === null) continue;
     if (typeof s.name !== "string" || typeof s.seed !== "string") return false;

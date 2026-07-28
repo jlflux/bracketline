@@ -672,6 +672,157 @@ textarea {
   fill: none;
 }
 
+/* ---------- Group stage ---------- */
+.stage-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 24px 0 12px;
+}
+.stage-head h2 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.stage-head .hint {
+  flex: 1;
+  min-width: 160px;
+}
+.group-config {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.groups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.group-card {
+  padding: 16px;
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.group-head h2 {
+  margin: 0;
+  font-size: 16.5px;
+  flex: 1;
+}
+.group-override-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+.standings {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.standings th {
+  text-align: center;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 700;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.standings td {
+  padding: 7px 6px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+.standings .team-col {
+  text-align: left;
+  width: 100%;
+}
+.standings td.team-col {
+  font-weight: 600;
+}
+.standings .rank {
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 12.5px;
+}
+.standings tr.advancing td {
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+}
+.standings tr.advancing .rank {
+  color: var(--accent-strong);
+}
+[data-theme="dark"] .standings tr.advancing .rank {
+  color: var(--accent);
+}
+.standings tr.pickable {
+  cursor: pointer;
+}
+.standings tr.pickable:hover td {
+  background: var(--surface-2);
+}
+.fixtures {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+.fixture {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  text-align: left;
+}
+.fixture:not(:disabled):hover {
+  border-color: var(--accent);
+}
+.fixture:disabled {
+  cursor: default;
+}
+.fixture .fx-team {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fixture .fx-team.right {
+  text-align: right;
+}
+.fixture .fx-team.won {
+  font-weight: 700;
+}
+.fixture .fx-score {
+  flex: none;
+  min-width: 44px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fixture.done .fx-score {
+  color: var(--accent-strong);
+}
+[data-theme="dark"] .fixture.done .fx-score {
+  color: var(--accent);
+}
+
 /* ---------- Match editor modal ---------- */
 .modal-backdrop {
   position: fixed;

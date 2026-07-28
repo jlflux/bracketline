@@ -3,11 +3,13 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import BracketView from "@/components/BracketView";
+import GroupStageView from "@/components/GroupStageView";
 import {
   BracketData,
   BracketFormat,
   bracketChampion,
   bracketFormat,
+  fillKnockout,
   hasProgress,
   participantCount,
   rearrange,
@@ -132,6 +134,19 @@ export default function BracketPage({
   function onSwap(a: number, b: number) {
     if (!data) return;
     onChange(swapSlots(data, a, b));
+  }
+
+  function doFillKnockout() {
+    if (!data) return;
+    if (
+      hasProgress(data) &&
+      !confirm(
+        "Refill the knockout from the current group standings? Knockout scores will be cleared (group results and match schedules are kept)."
+      )
+    )
+      return;
+    onChange(fillKnockout(data));
+    showToast("Knockout filled from group standings");
   }
 
   async function saveToAccount() {
@@ -259,6 +274,33 @@ export default function BracketPage({
         )
       )}
 
+      {data.groupStage && (
+        <>
+          <div className="stage-head">
+            <h2>Group stage</h2>
+            <span className="hint">
+              Top {data.groupStage.advance} advance from each group
+            </span>
+            {canEdit && (
+              <button className="btn small primary" onClick={doFillKnockout}>
+                Fill knockout from standings
+              </button>
+            )}
+          </div>
+          <GroupStageView
+            data={data}
+            editable={canEdit}
+            onChange={onChange}
+          />
+          <div className="stage-head">
+            <h2>Knockout</h2>
+            <span className="hint">
+              A1 means Group A winner, B2 means Group B runner-up — names fill
+              in when you use the button above.
+            </span>
+          </div>
+        </>
+      )}
       <BracketView
         data={data}
         editable={canEdit}

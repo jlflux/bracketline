@@ -56,6 +56,7 @@ export const PUT = apiHandler(async (req: NextRequest, ctx: RouteCtx) => {
     ...existing,
     name: incoming.name.trim().slice(0, 120),
     format: incoming.format === "double" ? "double" : "single",
+    groupStage: incoming.groupStage,
     slots: incoming.slots,
     results: incoming.results ?? {},
     updatedAt: now,
