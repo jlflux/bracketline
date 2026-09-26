@@ -8,11 +8,15 @@ import {
   BracketData,
   BracketFormat,
   Knockout,
+  Participant,
   SPORTS,
   SportId,
+  allParticipants,
   bestOfOf,
   bracketChampion,
   buildSlots,
+  findParticipant,
+  followStatus,
   bracketFormat,
   fillBrackets,
   hasProgress,
@@ -35,6 +39,7 @@ import {
   saveLocal,
 } from "@/lib/localBrackets";
 import { SLUG_MAX, slugify } from "@/lib/slug";
+import { getLocalFavorite, setLocalFavorite } from "@/lib/localFavorites";
 
 async function readJson(res: Response): Promise<Record<string, unknown>> {
   try {
@@ -52,6 +57,9 @@ export default function BracketPage({ id }: { id: string }) {
   const [notFound, setNotFound] = useState(false);
   const [toast, setToast] = useState("");
   const [slug, setSlug] = useState<string | null>(null);
+  /** Team this viewer follows — theirs alone, not part of the bracket. */
+  const [favorite, setFavorite] = useState<string | null>(null);
+  const [followOpen, setFollowOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [seedEdit, setSeedEdit] = useState(false);
   const [moveMode, setMoveMode] = useState(false);
@@ -69,6 +77,26 @@ export default function BracketPage({ id }: { id: string }) {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (local) {
+      setFavorite(getLocalFavorite(id));
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/brackets/${id}/favorite`)
+      .then(readJson)
+      .then((d) => {
+        if (cancelled) return;
+        // Signed-out viewers fall back to this browser's choice.
+        const remote = (d.participantId as string | null) ?? null;
+        setFavorite(remote ?? getLocalFavorite(id));
+      })
+      .catch(() => setFavorite(getLocalFavorite(id)));
+    return () => {
+      cancelled = true;
+    };
+  }, [id, local]);
 
   useEffect(() => {
     if (local) {
@@ -221,6 +249,22 @@ export default function BracketPage({ id }: { id: string }) {
       : window.location.href;
   }
 
+  function chooseFavorite(teamId: string | null) {
+    setFavorite(teamId);
+    setFollowOpen(false);
+    // Always keep a local copy so it survives a signed-out reload.
+    setLocalFavorite(id, teamId);
+    if (!local && loggedIn) {
+      fetch(`/api/brackets/${id}/favorite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId: teamId }),
+      }).catch(() => {});
+    }
+    const team = teamId && data ? findParticipant(data, teamId) : null;
+    showToast(team ? `Following ${team.name}` : "Stopped following");
+  }
+
   function share() {
     const url = shareUrl();
     navigator.clipboard
@@ -264,6 +308,8 @@ export default function BracketPage({ id }: { id: string }) {
     : bracketChampion(knockoutView(data, knockouts[0]));
   const sport = sportOf(data);
   const bestOf = bestOfOf(data);
+  const favoriteTeam = favorite ? findParticipant(data, favorite) : null;
+  const favoriteStatus = favorite ? followStatus(data, favorite) : null;
 
   return (
     <main className="container" style={{ maxWidth: 1400 }}>
@@ -280,6 +326,12 @@ export default function BracketPage({ id }: { id: string }) {
               ? ` · ${sport.label}`
               : ""}
         </span>
+        <button
+          className={`btn small${favorite ? " following" : ""}`}
+          onClick={() => setFollowOpen(true)}
+        >
+          {favoriteTeam ? `★ ${favoriteTeam.name}` : "☆ Follow a team"}
+        </button>
         {canEdit && (
           <button
             className={`btn small${panelOpen ? " primary" : ""}`}
@@ -304,6 +356,32 @@ export default function BracketPage({ id }: { id: string }) {
           </a>
         )}
       </div>
+
+      {favoriteTeam && favoriteStatus && (
+        <div className={`follow-strip ${favoriteStatus.state}`}>
+          <span className="follow-star" aria-hidden>
+            ★
+          </span>
+          <strong>{favoriteTeam.name}</strong>
+          <span className="follow-where">{favoriteStatus.label}</span>
+          <span style={{ flex: 1 }} />
+          <button
+            className="btn small ghost"
+            onClick={() => chooseFavorite(null)}
+          >
+            Stop following
+          </button>
+        </div>
+      )}
+
+      {followOpen && (
+        <FollowPicker
+          teams={allParticipants(data)}
+          current={favorite}
+          onPick={chooseFavorite}
+          onClose={() => setFollowOpen(false)}
+        />
+      )}
 
       {canEdit && panelOpen && (
         <CustomizePanel
@@ -396,6 +474,7 @@ export default function BracketPage({ id }: { id: string }) {
             onChange={onChange}
             moveMode={moveMode}
             onNotice={showToast}
+            favorite={favorite}
           />
         </>
       )}
@@ -426,6 +505,7 @@ export default function BracketPage({ id }: { id: string }) {
               seedEdit={seedEdit}
               onSwap={(a, b) => onSwap(k, a, b)}
               teamEdit={panelOpen && !seedEdit}
+              favorite={favorite}
             />
           </div>
         );
@@ -849,5 +929,77 @@ function SlugEditor({
         </p>
       )}
     </>
+  );
+}
+
+/** Pick one team to follow through the tournament. */
+function FollowPicker({
+  teams,
+  current,
+  onPick,
+  onClose,
+}: {
+  teams: Participant[];
+  current: string | null;
+  onPick: (teamId: string | null) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? teams.filter((t) => t.name.toLowerCase().includes(needle))
+    : teams;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal card" onClick={(e) => e.stopPropagation()}>
+        <h2>Follow a team</h2>
+        <p className="sub">
+          They&apos;ll be highlighted everywhere they appear, so you can always
+          spot them. Only you see this.
+        </p>
+        {teams.length > 8 && (
+          <input
+            className="input"
+            placeholder="Search teams…"
+            value={query}
+            autoFocus
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search teams"
+          />
+        )}
+        <div className="follow-list">
+          {shown.map((t) => (
+            <button
+              key={t.id}
+              className={`follow-option${current === t.id ? " active" : ""}`}
+              onClick={() => onPick(current === t.id ? null : t.id)}
+            >
+              <span className="follow-mark" aria-hidden>
+                {current === t.id ? "★" : "☆"}
+              </span>
+              {t.seed && <span className="seed-tag">{t.seed}</span>}
+              <span className="follow-name">{t.name}</span>
+            </button>
+          ))}
+          {shown.length === 0 && (
+            <p className="hint" style={{ padding: "8px 2px" }}>
+              No teams match “{query}”.
+            </p>
+          )}
+        </div>
+        <div className="modal-actions">
+          {current && (
+            <button className="btn ghost danger" onClick={() => onPick(null)}>
+              Stop following
+            </button>
+          )}
+          <span className="spacer" />
+          <button className="btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

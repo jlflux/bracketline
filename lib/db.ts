@@ -52,6 +52,13 @@ async function init(): Promise<Client> {
         updated_at INTEGER NOT NULL
       )`,
       `CREATE INDEX IF NOT EXISTS idx_brackets_user ON brackets(user_id)`,
+      `CREATE TABLE IF NOT EXISTS favorites (
+        user_id TEXT NOT NULL REFERENCES users(id),
+        bracket_id TEXT NOT NULL REFERENCES brackets(id),
+        participant_id TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, bracket_id)
+      )`,
     ],
     "write"
   );

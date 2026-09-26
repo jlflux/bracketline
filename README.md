@@ -23,6 +23,12 @@ themes, a light-blue accent, and a layout that works on desktop and phone.
 - **Placement modes** — seeded (1 vs lowest), in listed order, or random draw.
 - **Scores & winners** — click any match to enter scores or tap a player to
   mark the winner; changing an earlier result clears the affected path.
+- **Follow a team** — anyone viewing a tournament can star one team. It's
+  highlighted everywhere it appears — group standings, fixtures and bracket
+  cards — with a strip at the top saying where they stand right now ("Gold ·
+  Semifinals", "Out · Quarterfinals", "Champion"). The choice is personal:
+  signed-in viewers get it synced to their account, everyone else keeps it in
+  their browser.
 - **Accounts** — email/password accounts with cookie sessions and
   self-serve password reset; brackets are saved to the server and shareable
   by link. Guests can build brackets that live in their browser and move
@@ -102,6 +108,7 @@ flow still works. To send real emails, add a `RESEND_API_KEY` from
 | `lib/bracket.ts` | Tournament model: sports/scoring, seeding order, bye placement, single & double elimination, group standings, multi-bracket qualification |
 | `lib/db.ts`, `lib/auth.ts` | SQLite schema, scrypt password hashing, cookie sessions |
 | `lib/localBrackets.ts` | Browser-side storage for guest brackets |
+| `lib/localFavorites.ts` | Followed team for viewers without an account |
 | `lib/slug.ts` | Custom-link validation and reserved paths |
 | `components/BracketPage.tsx` | The bracket screen, shared by `/b/[id]` and custom links |
 | `components/BracketView.tsx` | Bracket renderer (positioned cards + SVG connectors) and the match editor (single score or set-by-set) |

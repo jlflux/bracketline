@@ -12,6 +12,9 @@
   --accent-soft: #e3f3fd;
   --accent-text: #ffffff;
   --win: #0d9de8;
+  --fav: #b45309;
+  --fav-soft: #fdf1dc;
+  --fav-border: #e0a955;
   --danger: #d9483b;
   --shadow: 0 1px 2px rgba(15, 30, 50, 0.06), 0 8px 24px rgba(15, 30, 50, 0.07);
   --shadow-sm: 0 1px 2px rgba(15, 30, 50, 0.08);
@@ -33,6 +36,9 @@
   --accent-soft: #14304a;
   --accent-text: #04121f;
   --win: #45b8f5;
+  --fav: #fbbf24;
+  --fav-soft: #3a2c10;
+  --fav-border: #7c5c1c;
   --danger: #f07567;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -1024,6 +1030,123 @@ textarea {
 }
 [data-theme="dark"] .sets-summary {
   color: var(--accent);
+}
+
+/* ---------- Following a team ---------- */
+.follow-star {
+  color: var(--fav);
+  font-size: 0.92em;
+  margin-right: 4px;
+}
+.btn.following {
+  border-color: var(--fav-border);
+  color: var(--fav);
+  font-weight: 700;
+}
+.follow-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--fav-soft);
+  border: 1px solid var(--fav-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 14px;
+  margin: 0 0 12px;
+  font-size: 14.5px;
+}
+.follow-strip .follow-star {
+  font-size: 16px;
+}
+.follow-where {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.follow-strip.champion .follow-where,
+.follow-strip.playing .follow-where {
+  color: var(--fav);
+}
+.follow-strip.eliminated {
+  opacity: 0.85;
+}
+
+/* Rows and cards carrying the followed team */
+.standings tr.followed td {
+  background: var(--fav-soft);
+}
+.standings tr.followed.advancing td {
+  /* Both states at once: keep the follow tint, mark advancement with a rule. */
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.standings tr.followed .team-name {
+  font-weight: 800;
+}
+.fixture.followed {
+  border-color: var(--fav-border);
+  background: color-mix(in srgb, var(--fav-soft) 55%, var(--surface));
+}
+.fixture .fx-team.fav {
+  font-weight: 800;
+  color: var(--fav);
+}
+.match-slot.followed {
+  background: var(--fav-soft);
+}
+.match-slot.followed .p-name {
+  font-weight: 800;
+}
+.match-slot.winner.followed {
+  background: color-mix(in srgb, var(--fav-soft) 70%, var(--accent-soft));
+}
+.match-slot.loser.followed .p-name,
+.match-slot.loser.followed .seed-tag {
+  opacity: 0.8;
+}
+
+/* Picker */
+.follow-list {
+  display: grid;
+  gap: 5px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 12px;
+  padding-right: 2px;
+}
+.follow-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.follow-option:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.follow-option.active {
+  border-color: var(--fav-border);
+  background: var(--fav-soft);
+  font-weight: 700;
+}
+.follow-option .follow-mark {
+  color: var(--fav);
+  font-size: 15px;
+  flex: none;
+}
+.follow-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- Custom link ---------- */

@@ -29,6 +29,8 @@ type Props = {
   /** When on, teams can be dragged (or tapped) between groups. */
   moveMode?: boolean;
   onNotice?: (message: string) => void;
+  /** Id of the team this viewer follows, highlighted throughout. */
+  favorite?: string | null;
 };
 
 type Fixture = {
@@ -89,6 +91,7 @@ export default function GroupStageView({
   onChange,
   moveMode = false,
   onNotice,
+  favorite = null,
 }: Props) {
   const stage = data.groupStage!;
   const series = isSeries(data);
@@ -299,7 +302,9 @@ export default function GroupStageView({
                         key={row.p.id}
                         className={`${advancing ? "advancing" : ""}${
                           isOverriding ? " pickable" : ""
-                        }${moveMode ? " movable" : ""}${held ? " held" : ""}`}
+                        }${moveMode ? " movable" : ""}${held ? " held" : ""}${
+                          row.p.id === favorite ? " followed" : ""
+                        }`}
                         draggable={moveMode || undefined}
                         onDragStart={
                           moveMode
@@ -338,7 +343,14 @@ export default function GroupStageView({
                               : rank}
                         </td>
                         <td className="team-col">
-                          <span className="team-name">{row.p.name}</span>
+                          <span className="team-name">
+                            {row.p.id === favorite && (
+                              <span className="follow-star" aria-label="Following">
+                                ★
+                              </span>
+                            )}
+                            {row.p.name}
+                          </span>
                           {!isOverriding && !moveMode && dest && showDest && (
                             <span className="dest-badge">{dest.name}</span>
                           )}
@@ -369,12 +381,18 @@ export default function GroupStageView({
               {fixtures.map((f) => (
                 <button
                   key={f.key}
-                  className={`fixture${f.result.winner ? " done" : ""}`}
+                  className={`fixture${f.result.winner ? " done" : ""}${
+                    f.p1.id === favorite || f.p2.id === favorite
+                      ? " followed"
+                      : ""
+                  }`}
                   disabled={moveMode}
                   onClick={() => setEditing(f)}
                 >
                   <span
-                    className={`fx-team${f.result.winner === 1 ? " won" : ""}`}
+                    className={`fx-team${f.result.winner === 1 ? " won" : ""}${
+                      f.p1.id === favorite ? " fav" : ""
+                    }`}
                   >
                     {f.p1.name}
                   </span>
@@ -398,7 +416,7 @@ export default function GroupStageView({
                   <span
                     className={`fx-team right${
                       f.result.winner === 2 ? " won" : ""
-                    }`}
+                    }${f.p2.id === favorite ? " fav" : ""}`}
                   >
                     {f.p2.name}
                   </span>

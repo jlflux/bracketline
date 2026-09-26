@@ -1141,3 +1141,130 @@ export function newId(prefix = ""): string {
     s += chars[Math.floor(Math.random() * chars.length)];
   return prefix + s;
 }
+
+/* ---------------- Following a team ---------------- */
+
+/** Every real team in the tournament, de-duplicated (placeholders excluded). */
+export function allParticipants(data: BracketData): Participant[] {
+  const seen = new Map<string, Participant>();
+  for (const g of data.groupStage?.groups ?? [])
+    for (const p of g) seen.set(p.id, p);
+  for (const k of knockoutsOf(data))
+    for (const s of k.slots)
+      if (s && !isPlaceholder(s)) seen.set(s.id, s);
+  return [...seen.values()];
+}
+
+export function findParticipant(
+  data: BracketData,
+  teamId: string
+): Participant | null {
+  return allParticipants(data).find((p) => p.id === teamId) ?? null;
+}
+
+/** Every match in one knockout, whatever the format. */
+function knockoutMatches(view: BracketData): Match[] {
+  if (bracketFormat(view) === "double") {
+    const d = computeDouble(view);
+    return [...d.wb.flat(), ...d.lb.flat(), d.gf, ...(d.gf2 ? [d.gf2] : [])];
+  }
+  return computeBracket(view).rounds.flat();
+}
+
+function matchLabel(m: Match, totalRounds: number): string {
+  if (m.section === "gf") return m.round === 1 ? "Bracket reset" : "Grand final";
+  if (m.section === "l") return `Losers round ${m.round + 1}`;
+  return roundName(m.round, totalRounds);
+}
+
+export type FollowState =
+  | "group"
+  | "playing"
+  | "waiting"
+  | "eliminated"
+  | "champion";
+
+export type FollowStatus = {
+  state: FollowState;
+  /** One short line: "Gold · Semifinals", "Group A · 2nd". */
+  label: string;
+};
+
+/**
+ * Where a team currently stands — the group position before the brackets
+ * are filled, then their live round, and finally how they finished.
+ */
+export function followStatus(
+  data: BracketData,
+  teamId: string
+): FollowStatus | null {
+  const team = findParticipant(data, teamId);
+  if (!team) return null;
+
+  const knockouts = knockoutsOf(data);
+  // With a single unnamed bracket its name adds nothing ("Bracket · Final").
+  const named = knockouts.length > 1;
+  for (const k of knockouts) {
+    const view = knockoutView(data, k);
+    const matches = knockoutMatches(view);
+    const appearances = matches.filter(
+      (m) => m.p1?.id === teamId || m.p2?.id === teamId
+    );
+    if (appearances.length === 0) continue;
+
+    const totalRounds = Math.max(
+      1,
+      Math.log2(Math.max(2, (view.slots ?? []).length))
+    );
+    const champion = bracketChampion(view);
+    if (champion?.id === teamId)
+      return {
+        state: "champion",
+        label: named ? `Won ${k.name}` : "Champion",
+      };
+
+    const live = appearances.find((m) => !m.winner);
+    if (live) {
+      const round = matchLabel(live, totalRounds);
+      return {
+        state: "playing",
+        label: named ? `${k.name} · ${round}` : round,
+      };
+    }
+
+    const lost = appearances
+      .filter((m) => m.winner && m.winner.id !== teamId)
+      .sort((a, b) => b.round - a.round)[0];
+    if (lost) {
+      const round = matchLabel(lost, totalRounds);
+      return {
+        state: "eliminated",
+        label: named ? `Out · ${k.name}, ${round}` : `Out · ${round}`,
+      };
+    }
+
+    return {
+      state: "waiting",
+      label: named ? `${k.name} · advancing` : "Advancing",
+    };
+  }
+
+  const stage = data.groupStage;
+  if (stage) {
+    const gi = stage.groups.findIndex((g) => g.some((p) => p.id === teamId));
+    if (gi >= 0) {
+      const rank = groupRanking(stage, gi).findIndex((p) => p.id === teamId) + 1;
+      return {
+        state: "group",
+        label: `Group ${groupLetter(gi)} · ${ordinal(rank)}`,
+      };
+    }
+  }
+  return null;
+}
+
+export function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+}

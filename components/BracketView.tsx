@@ -37,6 +37,8 @@ type Props = {
   /** When true (customize mode), clicking a matchup edits the teams in it
    *  (seed + name) instead of the result. */
   teamEdit?: boolean;
+  /** Id of the team this viewer follows, highlighted throughout. */
+  favorite?: string | null;
 };
 
 type Item = { match: Match; x: number; top: number; h: number };
@@ -324,6 +326,7 @@ export default function BracketView({
   seedEdit = false,
   onSwap,
   teamEdit = false,
+  favorite = null,
 }: Props) {
   const [editing, setEditing] = useState<Match | null>(null);
   const [teamEditing, setTeamEditing] = useState<Match | null>(null);
@@ -432,6 +435,7 @@ export default function BracketView({
                     key={side}
                     match={match}
                     side={side}
+                    favorite={favorite}
                     swappable={swappable}
                     selected={swappable && selectedSlot === slotIndex}
                     dragging={swappable && dragSlot === slotIndex}
@@ -503,6 +507,7 @@ function formatSchedule(r: MatchResult): string {
 function Slot({
   match,
   side,
+  favorite,
   swappable,
   selected,
   dragging,
@@ -512,6 +517,7 @@ function Slot({
 }: {
   match: Match;
   side: 1 | 2;
+  favorite?: string | null;
   swappable?: boolean;
   selected?: boolean;
   dragging?: boolean;
@@ -535,7 +541,7 @@ function Slot({
         isLoser ? " loser" : ""
       }${swappable ? " swap-target" : ""}${selected ? " swap-selected" : ""}${
         dragging ? " swap-dragging" : ""
-      }`}
+      }${p && p.id === favorite ? " followed" : ""}`}
       draggable={swappable || undefined}
       onClick={
         onTap
@@ -570,6 +576,11 @@ function Slot({
       )}
       {p?.seed ? <span className="seed-tag">{p.seed}</span> : null}
       <span className={`p-name${p ? "" : " tbd"}`}>
+        {p && p.id === favorite && (
+          <span className="follow-star" aria-label="Following">
+            ★
+          </span>
+        )}
         {p ? p.name : isByeSlot ? "Bye" : (from ?? "TBD")}
       </span>
       {score !== null && score !== undefined && (
