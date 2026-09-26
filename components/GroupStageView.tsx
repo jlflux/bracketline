@@ -397,6 +397,11 @@ export default function GroupStageView({
                       f.p1.id === favorite ? " fav" : ""
                     }`}
                   >
+                    {f.result.home === 1 && (
+                      <span className="home-tag" title="Home team">
+                        H
+                      </span>
+                    )}
                     {f.p1.name}
                   </span>
                   <span className="fx-mid">
@@ -422,6 +427,11 @@ export default function GroupStageView({
                     }${f.p2.id === favorite ? " fav" : ""}`}
                   >
                     {f.p2.name}
+                    {f.result.home === 2 && (
+                      <span className="home-tag right" title="Home team">
+                        H
+                      </span>
+                    )}
                   </span>
                   </span>
                   {hasSchedule(f.result) && (

@@ -21,6 +21,8 @@ export type MatchResult = {
   winner: 1 | 2 | null;
   /** Per-set/per-game detail for series sports. */
   games?: GameScore[];
+  /** Which side is the home team: 1 = top slot, 2 = bottom slot. */
+  home?: 1 | 2;
   /** Optional schedule info. date is "YYYY-MM-DD", time is "HH:MM". */
   location?: string;
   date?: string;
@@ -356,6 +358,7 @@ function validResult(
         s2: null,
         winner: null,
         games: undefined,
+        home: undefined,
       };
   }
   return stored;
@@ -672,6 +675,7 @@ export function clearScoresKeepSchedules(
         s2: null,
         winner: null,
         games: undefined,
+        home: undefined,
         p1Id: undefined,
         p2Id: undefined,
       };

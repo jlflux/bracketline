@@ -1048,6 +1048,64 @@ textarea {
   color: var(--accent);
 }
 
+/* ---------- Home team ---------- */
+.home-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+.home-tag.right {
+  margin-right: 0;
+  margin-left: 5px;
+}
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+.home-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.home-row .chip {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-readonly {
+  border-top: 1px solid var(--border);
+  margin: 14px 0 0;
+  padding-top: 14px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+/* The schedule block sits right below, so it doesn't need its own rule. */
+.home-row + .schedule-fields,
+.home-readonly + .schedule-fields {
+  border-top: none;
+  margin-top: 12px;
+  padding-top: 0;
+}
+
 /* ---------- Following a team ---------- */
 .follow-star {
   color: var(--fav);

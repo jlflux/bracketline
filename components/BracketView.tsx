@@ -549,6 +549,11 @@ function Slot({
         </span>
       )}
       {p?.seed ? <span className="seed-tag">{p.seed}</span> : null}
+      {p && match.result.home === side && (
+        <span className="home-tag" title="Home team">
+          H
+        </span>
+      )}
       <span className={`p-name${p ? "" : " tbd"}`}>
         {p && p.id === favorite && (
           <span className="follow-star" aria-label="Following">
@@ -593,6 +598,7 @@ export function MatchEditor({
     )
   );
   const [winner, setWinner] = useState<1 | 2 | null>(match.result.winner);
+  const [home, setHome] = useState<1 | 2 | null>(match.result.home ?? null);
   const [location, setLocation] = useState(match.result.location ?? "");
   const [date, setDate] = useState(match.result.date ?? "");
   const [time, setTime] = useState(match.result.time ?? "");
@@ -622,11 +628,14 @@ export function MatchEditor({
   // Scores decide the match; tapping a name only covers forfeits.
   const effectiveWinner = series ? (summary.winner ?? winner) : winner;
 
-  function schedule() {
+  /** Details that belong to the fixture rather than the result, so they
+   *  survive clearing a score. */
+  function fixtureDetails() {
     return {
       location: location.trim() || undefined,
       date: date || undefined,
       time: time || undefined,
+      home: home ?? undefined,
     };
   }
 
@@ -637,10 +646,10 @@ export function MatchEditor({
         s2: playedAny ? summary.won2 : null,
         winner: effectiveWinner,
         games: playedAny ? games : undefined,
-        ...schedule(),
+        ...fixtureDetails(),
       });
     } else {
-      onSave({ s1: num(s1), s2: num(s2), winner, ...schedule() });
+      onSave({ s1: num(s1), s2: num(s2), winner, ...fixtureDetails() });
     }
   }
 
@@ -755,6 +764,35 @@ export function MatchEditor({
           })
         )}
 
+        {readOnly
+          ? match.result.home && (
+              <p className="home-readonly">
+                Home:{" "}
+                <strong>
+                  {(match.result.home === 1 ? match.p1 : match.p2)?.name}
+                </strong>
+              </p>
+            )
+          : (match.p1 || match.p2) && (
+              <div className="home-row">
+                <span className="home-label">Home team</span>
+                {([1, 2] as const).map((side) => {
+                  const p = side === 1 ? match.p1 : match.p2;
+                  if (!p) return null;
+                  return (
+                    <button
+                      key={side}
+                      type="button"
+                      className={`chip${home === side ? " active" : ""}`}
+                      onClick={() => setHome(home === side ? null : side)}
+                    >
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
         {readOnly ? (
           hasSchedule(match.result) && (
             <div className="schedule-fields readonly-schedule">
@@ -816,7 +854,7 @@ export function MatchEditor({
                   s2: null,
                   winner: null,
                   games: undefined,
-                  ...schedule(),
+                  ...fixtureDetails(),
                 })
               }
             >

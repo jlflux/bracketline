@@ -23,6 +23,9 @@ themes, a light-blue accent, and a layout that works on desktop and phone.
 - **Placement modes** — seeded (1 vs lowest), in listed order, or random draw.
 - **Scores & winners** — click any match to enter scores or tap a player to
   mark the winner; changing an earlier result clears the affected path.
+- **Match details** — each match carries a location, date and time (shown as
+  "Fri, 10/2 @ 4:30 pm") and can mark one side as the home team, flagged with
+  a small H beside their name.
 - **Follow a team** — anyone viewing a tournament can star one team. It's
   highlighted everywhere it appears — group standings, fixtures and bracket
   cards — with a strip at the top saying where they stand right now ("Gold ·
