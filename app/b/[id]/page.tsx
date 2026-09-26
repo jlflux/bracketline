@@ -56,6 +56,7 @@ export default function BracketPage({
   const [notFound, setNotFound] = useState(false);
   const [toast, setToast] = useState("");
   const [seedEdit, setSeedEdit] = useState(false);
+  const [moveMode, setMoveMode] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const local = isLocalId(id);
@@ -336,12 +337,40 @@ export default function BracketPage({
                 .join(" · ")}
             </span>
             {canEdit && (
-              <button className="btn small primary" onClick={doFillBrackets}>
-                Fill brackets from standings
-              </button>
+              <>
+                <button
+                  className={`btn small${moveMode ? " primary" : ""}`}
+                  onClick={() => setMoveMode(!moveMode)}
+                >
+                  {moveMode ? "Done moving" : "Move teams"}
+                </button>
+                <button className="btn small primary" onClick={doFillBrackets}>
+                  Fill brackets from standings
+                </button>
+              </>
             )}
           </div>
-          <GroupStageView data={data} editable={canEdit} onChange={onChange} />
+          {moveMode && (
+            <div className="seed-edit-banner">
+              <span>
+                <strong>Moving teams:</strong> drag a team onto another group
+                — or tap the team, then tap the group it&apos;s joining.
+              </span>
+              <button
+                className="btn small primary"
+                onClick={() => setMoveMode(false)}
+              >
+                Done
+              </button>
+            </div>
+          )}
+          <GroupStageView
+            data={data}
+            editable={canEdit}
+            onChange={onChange}
+            moveMode={moveMode}
+            onNotice={showToast}
+          />
         </>
       )}
 
@@ -358,11 +387,7 @@ export default function BracketPage({
                 ) : (
                   data.groupStage && (
                     <span className="hint">
-                      {`A1 = Group A winner, A${
-                        ranksOf(k, data.groupStage)[0] ?? 2
-                      } = ${describeRanks([
-                        ranksOf(k, data.groupStage)[0] ?? 2,
-                      ])} in Group A. Names fill in when you use the button above.`}
+                      {placeholderHint(ranksOf(k, data.groupStage))}
                     </span>
                   )
                 )}
@@ -382,6 +407,18 @@ export default function BracketPage({
       {toast && <div className="toast">{toast}</div>}
     </main>
   );
+}
+
+/** Explain the A1 / B3 placeholder scheme for the places this bracket takes. */
+function placeholderHint(ranks: number[]): string {
+  const first = ranks[0] ?? 1;
+  const example =
+    first === 1
+      ? "A1 is the Group A winner"
+      : first === 2
+        ? "A2 is the Group A runner-up"
+        : `A${first} is ${describeRanks([first])} in Group A`;
+  return `${example} — names fill in when you use the button above.`;
 }
 
 function describeRanks(ranks: number[]): string {

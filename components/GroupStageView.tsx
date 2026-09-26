@@ -7,6 +7,7 @@ import {
   Match,
   MatchResult,
   Participant,
+  bracketFilled,
   bracketForRank,
   groupLetter,
   groupMatchKey,
@@ -14,6 +15,8 @@ import {
   groupStandings,
   isSeries,
   knockoutsOf,
+  moveTeamToGroup,
+  playedAgainstGroup,
   roundRobinRounds,
   sportOf,
 } from "@/lib/bracket";
@@ -23,6 +26,9 @@ type Props = {
   data: BracketData;
   editable: boolean;
   onChange?: (next: BracketData) => void;
+  /** When on, teams can be dragged (or tapped) between groups. */
+  moveMode?: boolean;
+  onNotice?: (message: string) => void;
 };
 
 type Fixture = {
@@ -77,17 +83,27 @@ function fixtureAsMatch(f: Fixture): Match {
   };
 }
 
-export default function GroupStageView({ data, editable, onChange }: Props) {
+export default function GroupStageView({
+  data,
+  editable,
+  onChange,
+  moveMode = false,
+  onNotice,
+}: Props) {
   const stage = data.groupStage!;
   const series = isSeries(data);
-  // With a single destination the highlight says it all; name it only when
-  // teams can land in different brackets.
-  const showDest = knockoutsOf(data).length > 1;
+  const knockouts = knockoutsOf(data);
+  // Only name a destination once the brackets actually hold teams — before
+  // that the split is just a plan, not a result.
+  const showDest = knockouts.length > 1 && knockouts.some(bracketFilled);
+  const topBracketId = knockouts[0]?.id;
   const sport = sportOf(data);
   const [editing, setEditing] = useState<Fixture | null>(null);
   /** Group index currently in manual-order mode, with the picks so far. */
   const [overriding, setOverriding] = useState<number | null>(null);
   const [picks, setPicks] = useState<string[]>([]);
+  /** Team picked up for moving (drag or first tap). */
+  const [heldTeam, setHeldTeam] = useState<string | null>(null);
 
   function patchStage(patch: Partial<GroupStage>) {
     onChange?.({
@@ -133,6 +149,31 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
     setOverriding(null);
   }
 
+  function moveTeam(teamId: string, toGroup: number, toIndex?: number) {
+    setHeldTeam(null);
+    const from = stage.groups.findIndex((g) =>
+      g.some((p) => p.id === teamId)
+    );
+    if (from === toGroup) return;
+    const lost = playedAgainstGroup(stage, teamId);
+    if (
+      lost > 0 &&
+      !confirm(
+        `Moving this team drops the ${lost} match${lost === 1 ? "" : "es"} it has already played in its current group. Continue?`
+      )
+    )
+      return;
+    const next = moveTeamToGroup(stage, teamId, toGroup, toIndex);
+    if (!next) {
+      onNotice?.(
+        "Can't move that team — groups need at least 2 teams and hold at most 8."
+      );
+      return;
+    }
+    onChange?.({ ...data, groupStage: next, updatedAt: Date.now() });
+    onNotice?.(`Moved to Group ${groupLetter(toGroup)}`);
+  }
+
   return (
     <div className="groups-grid">
       {stage.groups.map((group, gi) => {
@@ -150,12 +191,45 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
         );
 
         return (
-          <div key={gi} className="card group-card">
+          <div
+            key={gi}
+            className={`card group-card${moveMode ? " move-target" : ""}${
+              moveMode && heldTeam && !group.some((p) => p.id === heldTeam)
+                ? " droppable"
+                : ""
+            }`}
+            onDragOver={moveMode ? (e) => e.preventDefault() : undefined}
+            onDrop={
+              moveMode
+                ? (e) => {
+                    e.preventDefault();
+                    if (heldTeam) moveTeam(heldTeam, gi);
+                  }
+                : undefined
+            }
+            onClick={
+              moveMode && heldTeam && !group.some((p) => p.id === heldTeam)
+                ? () => moveTeam(heldTeam, gi)
+                : undefined
+            }
+          >
             <div className="group-head">
               <h2>Group {groupLetter(gi)}</h2>
-              <span className="hint">
-                {played}/{fixtures.length} played
-              </span>
+              {moveMode && heldTeam && !group.some((p) => p.id === heldTeam) ? (
+                <button
+                  className="btn small primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    moveTeam(heldTeam, gi);
+                  }}
+                >
+                  Move here
+                </button>
+              ) : (
+                <span className="hint">
+                  {played}/{fixtures.length} played
+                </span>
+              )}
               {editable &&
                 (isOverriding ? (
                   <span className="group-override-actions">
@@ -214,15 +288,44 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
                     const rank = rankOf.get(row.p.id) ?? 0;
                     const dest = bracketForRank(data, rank);
                     const pickIndex = picks.indexOf(row.p.id);
-                    const advancing = isOverriding ? pickIndex >= 0 : !!dest;
+                    // Highlight the places going to the top bracket; other
+                    // brackets are identified by their badge instead.
+                    const advancing = isOverriding
+                      ? pickIndex >= 0
+                      : dest?.id === topBracketId;
+                    const held = heldTeam === row.p.id;
                     return (
                       <tr
                         key={row.p.id}
                         className={`${advancing ? "advancing" : ""}${
                           isOverriding ? " pickable" : ""
-                        }`}
+                        }${moveMode ? " movable" : ""}${held ? " held" : ""}`}
+                        draggable={moveMode || undefined}
+                        onDragStart={
+                          moveMode
+                            ? (e) => {
+                                e.dataTransfer.effectAllowed = "move";
+                                setHeldTeam(row.p.id);
+                              }
+                            : undefined
+                        }
+                        onDragEnd={moveMode ? () => setHeldTeam(null) : undefined}
                         onClick={
-                          isOverriding ? () => togglePick(row.p.id) : undefined
+                          isOverriding
+                            ? () => togglePick(row.p.id)
+                            : moveMode
+                              ? (e) => {
+                                  e.stopPropagation();
+                                  // Holding a team from another group? This
+                                  // row is where it lands.
+                                  const holdingOther =
+                                    heldTeam &&
+                                    !group.some((p) => p.id === heldTeam);
+                                  if (holdingOther)
+                                    moveTeam(heldTeam!, gi, row.index);
+                                  else setHeldTeam(held ? null : row.p.id);
+                                }
+                              : undefined
                         }
                       >
                         <td className="rank">
@@ -230,11 +333,13 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
                             ? pickIndex >= 0
                               ? pickIndex + 1
                               : "·"
-                            : rank}
+                            : moveMode
+                              ? "⋮⋮"
+                              : rank}
                         </td>
                         <td className="team-col">
                           <span className="team-name">{row.p.name}</span>
-                          {!isOverriding && dest && showDest && (
+                          {!isOverriding && !moveMode && dest && showDest && (
                             <span className="dest-badge">{dest.name}</span>
                           )}
                         </td>
@@ -265,7 +370,7 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
                 <button
                   key={f.key}
                   className={`fixture${f.result.winner ? " done" : ""}`}
-                  disabled={!editable}
+                  disabled={moveMode}
                   onClick={() => setEditing(f)}
                 >
                   <span
@@ -308,6 +413,7 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
         <MatchEditor
           match={fixtureAsMatch(editing)}
           data={data}
+          readOnly={!editable}
           onSave={(res) => saveFixture(editing, res)}
           onClose={() => setEditing(null)}
         />

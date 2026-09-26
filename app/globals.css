@@ -724,6 +724,10 @@ textarea {
 }
 .group-card {
   padding: 16px;
+  /* Grid items default to min-width:auto, which lets long team names push
+     the fixture rows past the card edge. */
+  min-width: 0;
+  overflow: hidden;
 }
 .group-head {
   display: flex;
@@ -845,6 +849,7 @@ textarea {
 }
 .fixture {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   border: 1px solid var(--border);
@@ -863,7 +868,8 @@ textarea {
   cursor: default;
 }
 .fixture .fx-team {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -875,17 +881,21 @@ textarea {
   font-weight: 700;
 }
 .fixture .fx-mid {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 52px;
+  max-width: 118px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 68px;
 }
 .fixture .fx-sets {
   font-size: 10.5px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .fixture .fx-score {
   flex: none;
@@ -901,6 +911,53 @@ textarea {
 }
 [data-theme="dark"] .fixture.done .fx-score {
   color: var(--accent);
+}
+
+/* ---------- Moving teams between groups ---------- */
+.group-card.move-target {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+}
+.group-card.droppable {
+  cursor: copy;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.standings tr.movable {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.standings tr.movable:hover td {
+  background: var(--surface-2);
+}
+.standings tr.held td {
+  background: color-mix(in srgb, var(--accent-soft) 85%, transparent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.standings tr.movable .rank {
+  letter-spacing: -2px;
+  opacity: 0.75;
+}
+
+/* ---------- Read-only match detail ---------- */
+.readonly-schedule {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+}
+.set-input:disabled,
+.score-input:disabled {
+  opacity: 1;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: default;
+}
+.set-team:disabled {
+  cursor: default;
+  opacity: 1;
 }
 
 /* ---------- Set-by-set scoring ---------- */

@@ -915,6 +915,140 @@ export function groupQualifiers(stage: GroupStage, gi: number): Participant[] {
   return groupRanking(stage, gi).slice(0, stage.advance);
 }
 
+/* ---- Moving teams between groups ---- */
+
+/** Mirror a result so it reads from the other team's point of view. */
+function flipResult(r: MatchResult): MatchResult {
+  return {
+    ...r,
+    s1: r.s2,
+    s2: r.s1,
+    winner: r.winner === 1 ? 2 : r.winner === 2 ? 1 : null,
+    games: r.games?.map((g) => ({ a: g.b, b: g.a })),
+    p1Id: r.p2Id,
+    p2Id: r.p1Id,
+  };
+}
+
+/**
+ * Results are keyed by position within a group, so any change to group
+ * membership has to re-key them. We snapshot every played match by the pair
+ * of teams in it, then rebuild the keys from the new line-ups — flipping a
+ * result if the pair's order changed. Matches whose pairing no longer exists
+ * (the two teams are no longer in a group together) are dropped.
+ */
+function resultsByPair(
+  stage: GroupStage
+): Map<string, { aId: string; r: MatchResult }> {
+  const map = new Map<string, { aId: string; r: MatchResult }>();
+  stage.groups.forEach((g, gi) => {
+    for (let i = 0; i < g.length; i++) {
+      for (let j = i + 1; j < g.length; j++) {
+        const r = stage.results[groupMatchKey(gi, i, j)];
+        if (!r) continue;
+        const key = [g[i].id, g[j].id].sort().join("|");
+        map.set(key, { aId: g[i].id, r });
+      }
+    }
+  });
+  return map;
+}
+
+function rebuildResults(
+  groups: Participant[][],
+  map: Map<string, { aId: string; r: MatchResult }>
+): Record<string, MatchResult> {
+  const out: Record<string, MatchResult> = {};
+  groups.forEach((g, gi) => {
+    for (let i = 0; i < g.length; i++) {
+      for (let j = i + 1; j < g.length; j++) {
+        const hit = map.get([g[i].id, g[j].id].sort().join("|"));
+        if (!hit) continue;
+        out[groupMatchKey(gi, i, j)] =
+          hit.aId === g[i].id ? hit.r : flipResult(hit.r);
+      }
+    }
+  });
+  return out;
+}
+
+/** How many recorded matches a team would lose by leaving its group. */
+export function playedAgainstGroup(
+  stage: GroupStage,
+  teamId: string
+): number {
+  let n = 0;
+  stage.groups.forEach((g, gi) => {
+    const idx = g.findIndex((p) => p.id === teamId);
+    if (idx < 0) return;
+    for (let k = 0; k < g.length; k++) {
+      if (k === idx) continue;
+      const [i, j] = idx < k ? [idx, k] : [k, idx];
+      const r = stage.results[groupMatchKey(gi, i, j)];
+      if (r?.winner) n++;
+    }
+  });
+  return n;
+}
+
+/**
+ * Move a team into another group (optionally at a given position).
+ * Results between teams still grouped together are preserved; games against
+ * the old group-mates are dropped, since those matches no longer exist.
+ * Returns null if the move would leave a group with fewer than two teams.
+ */
+export function moveTeamToGroup(
+  stage: GroupStage,
+  teamId: string,
+  toGroup: number,
+  toIndex?: number
+): GroupStage | null {
+  const fromGroup = stage.groups.findIndex((g) =>
+    g.some((p) => p.id === teamId)
+  );
+  if (fromGroup < 0 || !stage.groups[toGroup]) return null;
+  if (fromGroup === toGroup) return stage;
+  if (stage.groups[fromGroup].length <= 2) return null;
+  if (stage.groups[toGroup].length >= MAX_GROUP_SIZE) return null;
+
+  const snapshot = resultsByPair(stage);
+  const team = stage.groups[fromGroup].find((p) => p.id === teamId)!;
+  const groups = stage.groups.map((g, gi) =>
+    gi === fromGroup ? g.filter((p) => p.id !== teamId) : [...g]
+  );
+  const at =
+    toIndex === undefined
+      ? groups[toGroup].length
+      : Math.max(0, Math.min(toIndex, groups[toGroup].length));
+  groups[toGroup].splice(at, 0, team);
+
+  // Drop the moved team from any manual finishing order it no longer belongs to.
+  const overrides: Record<string, string[]> = {};
+  for (const [key, ids] of Object.entries(stage.overrides)) {
+    const gi = Number(key);
+    const members = new Set((groups[gi] ?? []).map((p) => p.id));
+    const kept = ids.filter((id) => members.has(id));
+    if (kept.length) overrides[key] = kept;
+  }
+
+  return {
+    ...stage,
+    groups,
+    results: rebuildResults(groups, snapshot),
+    overrides,
+  };
+}
+
+/** A qualifier slot that's still a placeholder (A1, B2…) rather than a team. */
+export function isPlaceholder(p: Participant): boolean {
+  return /^q\d+-\d+$/.test(p.id);
+}
+
+/** True once a bracket holds real teams rather than group placeholders. */
+export function bracketFilled(k: Knockout): boolean {
+  return k.slots.some((s) => s && !isPlaceholder(s));
+}
+
 /** Order qualifiers rank-major (all winners, then all runners-up, …) so the
  *  seeded 1-vs-lowest placement pairs group winners with runners-up from
  *  other groups (A1 vs B2, B1 vs A2). Odd group counts rotate later ranks to

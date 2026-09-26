@@ -397,24 +397,25 @@ export default function BracketView({
         {layout.items.map(({ match, x, top }) => {
           const canEditTeams =
             editable && teamEdit && !seedEdit && !!(match.p1 || match.p2);
+          const playable = !!match.p1 && !!match.p2 && !match.isBye;
           const canEditResult =
-            editable &&
-            !seedEdit &&
-            !teamEdit &&
-            !!match.p1 &&
-            !!match.p2 &&
-            !match.isBye;
+            editable && !seedEdit && !teamEdit && playable;
+          // Viewers can still open a decided match to see the detail.
+          const canViewResult =
+            !editable && playable && match.result.winner !== null;
           const swappable =
             seedEdit && match.section === "w" && match.round === 0;
           const onClick = canEditTeams
             ? () => setTeamEditing(match)
-            : canEditResult
+            : canEditResult || canViewResult
               ? () => setEditing(match)
               : undefined;
           return (
             <div
               key={match.key}
-              className={`match-card${canEditResult ? " clickable" : ""}${
+              className={`match-card${
+                canEditResult || canViewResult ? " clickable" : ""
+              }${
                 canEditTeams ? " team-editable" : ""
               }${swappable ? " swappable" : ""}`}
               style={{ left: x, top, width: CARD_W }}
@@ -459,6 +460,7 @@ export default function BracketView({
         <MatchEditor
           match={editing}
           data={data}
+          readOnly={!editable}
           onSave={(res) => saveResult(editing, res)}
           onClose={() => setEditing(null)}
         />
@@ -582,12 +584,15 @@ export function MatchEditor({
   data,
   onSave,
   onClose,
+  readOnly = false,
 }: {
   match: Match;
   /** Bracket the match belongs to — supplies the sport and series length. */
   data: BracketData;
   onSave: (result: MatchResult) => void;
   onClose: () => void;
+  /** Viewers who can't edit still get to see the detail. */
+  readOnly?: boolean;
 }) {
   const sport = sportOf(data);
   const bestOf = bestOfOf(data);
@@ -662,11 +667,15 @@ export function MatchEditor({
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
         <h2>Match details{match.num ? ` — ${match.num}` : ""}</h2>
         <p className="sub">
-          {series
-            ? `Best of ${bestOf} — first to ${needed} ${sport.unit.toLowerCase()}${
-                needed > 1 ? "s" : ""
-              }. Enter the ${sport.pointsLabel.toLowerCase()} in each ${sport.unit.toLowerCase()}.`
-            : "Tap a team to mark the winner, or enter scores."}
+          {readOnly
+            ? series
+              ? `Best of ${bestOf}.`
+              : "Match result."
+            : series
+              ? `Best of ${bestOf} — first to ${needed} ${sport.unit.toLowerCase()}${
+                  needed > 1 ? "s" : ""
+                }. Enter the ${sport.pointsLabel.toLowerCase()} in each ${sport.unit.toLowerCase()}.`
+              : "Tap a team to mark the winner, or enter scores."}
         </p>
 
         {series ? (
@@ -680,8 +689,15 @@ export function MatchEditor({
                   className={`set-team${
                     effectiveWinner === side ? " won" : ""
                   }`}
-                  title="Tap to award the match without scores (forfeit)"
-                  onClick={() => setWinner(winner === side ? null : side)}
+                  title={
+                    readOnly
+                      ? undefined
+                      : "Tap to award the match without scores (forfeit)"
+                  }
+                  disabled={readOnly}
+                  onClick={() =>
+                    !readOnly && setWinner(winner === side ? null : side)
+                  }
                 >
                   {side === 1 ? name1 : name2}
                 </button>
@@ -699,6 +715,7 @@ export function MatchEditor({
                   placeholder="—"
                   aria-label={`${sport.unit} ${i + 1}, ${name1}`}
                   value={g.a ?? ""}
+                  disabled={readOnly}
                   onChange={(e) => updateGame(i, "a", e.target.value)}
                 />
                 <input
@@ -708,6 +725,7 @@ export function MatchEditor({
                   placeholder="—"
                   aria-label={`${sport.unit} ${i + 1}, ${name2}`}
                   value={g.b ?? ""}
+                  disabled={readOnly}
                   onChange={(e) => updateGame(i, "b", e.target.value)}
                 />
               </div>
@@ -730,7 +748,9 @@ export function MatchEditor({
               <div
                 key={side}
                 className={`score-edit-row${winner === side ? " winner" : ""}`}
-                onClick={() => setWinner(winner === side ? null : side)}
+                onClick={() =>
+                  !readOnly && setWinner(winner === side ? null : side)
+                }
               >
                 {p?.seed ? <span className="seed-tag">{p.seed}</span> : null}
                 <span className="p-name">{p?.name}</span>
@@ -741,6 +761,7 @@ export function MatchEditor({
                   inputMode="numeric"
                   placeholder="—"
                   value={side === 1 ? s1 : s2}
+                  disabled={readOnly}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) => updateScore(side, e.target.value)}
                 />
@@ -749,6 +770,13 @@ export function MatchEditor({
           })
         )}
 
+        {readOnly ? (
+          hasSchedule(match.result) && (
+            <div className="schedule-fields readonly-schedule">
+              {formatSchedule(match.result)}
+            </div>
+          )
+        ) : (
         <div className="schedule-fields">
           <div className="field" style={{ marginBottom: 0 }}>
             <label htmlFor="m-loc">Location</label>
@@ -784,30 +812,40 @@ export function MatchEditor({
             </div>
           </div>
         </div>
+        )}
 
-        <div className="modal-actions">
-          <button
-            className="btn ghost danger"
-            onClick={() =>
-              onSave({
-                s1: null,
-                s2: null,
-                winner: null,
-                games: undefined,
-                ...schedule(),
-              })
-            }
-          >
-            Clear result
-          </button>
-          <span className="spacer" />
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn primary" onClick={save}>
-            Save
-          </button>
-        </div>
+        {readOnly ? (
+          <div className="modal-actions">
+            <span className="spacer" />
+            <button className="btn primary" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="modal-actions">
+            <button
+              className="btn ghost danger"
+              onClick={() =>
+                onSave({
+                  s1: null,
+                  s2: null,
+                  winner: null,
+                  games: undefined,
+                  ...schedule(),
+                })
+              }
+            >
+              Clear result
+            </button>
+            <span className="spacer" />
+            <button className="btn" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn primary" onClick={save}>
+              Save
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
