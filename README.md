@@ -33,9 +33,9 @@ themes, a light-blue accent, and a layout that works on desktop and phone.
   signed-in viewers get it synced to their account, everyone else keeps it in
   their browser.
 - **Accounts** — email/password accounts with cookie sessions and
-  self-serve password reset; brackets are saved to the server and shareable
-  by link. Guests can build brackets that live in their browser and move
-  them into an account later.
+  self-serve password reset. Tournaments are saved to the creator's account
+  and shared by link; anyone can open, watch and follow one without signing
+  up. Who may create is configurable (see below).
 - **Light & dark mode** with a light-blue accent, responsive on mobile.
 
 ## Stack
@@ -95,6 +95,19 @@ ADMIN_EMAILS=you@example.com
 Links are lowercase letters, numbers and hyphens, must be unique, and can't
 take one of the app's own paths (`new`, `login`, `dashboard`, …). The original
 `/b/<id>` link keeps working alongside the custom one.
+
+### Who can create tournaments
+
+Creating requires an account. By default only admins (see `ADMIN_EMAILS`
+above) can create, which is useful while a site is being trialled:
+
+```
+BRACKET_CREATION=admins   # default — admins only
+BRACKET_CREATION=users    # any signed-in account
+```
+
+Anyone can still open, follow and watch a tournament they have a link to,
+with no account at all.
 
 ### Password-reset emails
 

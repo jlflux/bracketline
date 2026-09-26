@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiHandler } from "@/lib/api";
 import { getDb } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { canCreateBrackets, getCurrentUser } from "@/lib/auth";
 import {
   BracketData,
   newId,
@@ -93,6 +93,11 @@ export const POST = apiHandler(async (req: NextRequest) => {
   const user = await getCurrentUser();
   if (!user)
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  if (!canCreateBrackets(user))
+    return NextResponse.json(
+      { error: "Creating tournaments isn't enabled for your account yet." },
+      { status: 403 }
+    );
   const body = await req.json().catch(() => null);
   const data = body?.data as BracketData;
   if (!validate(data))

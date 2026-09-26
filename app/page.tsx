@@ -31,7 +31,7 @@ const features = [
   },
   {
     title: "Save & share",
-    text: "Create free with no signup. Make an account to keep brackets in the cloud and share a link to anyone.",
+    text: "Tournaments live in your account, so you can run one from any device — and share a link with anyone to follow along.",
     icon: (
       <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20 17.6A5 5 0 0 0 18 8h-1.3A8 8 0 1 0 4 16.3" />
@@ -56,11 +56,11 @@ export default function Home() {
           phone.
         </p>
         <div className="hero-actions">
-          <Link href="/new" className="btn primary">
-            Create a bracket
+          <Link href="/signup" className="btn primary">
+            Create an account
           </Link>
-          <Link href="/signup" className="btn">
-            Make an account
+          <Link href="/login" className="btn">
+            Sign in
           </Link>
         </div>
       </section>

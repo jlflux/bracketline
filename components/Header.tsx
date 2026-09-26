@@ -12,12 +12,7 @@ export default function Header() {
           Bracketline
         </Link>
         <nav className="header-nav">
-          <Link href="/new" className="nav-link hide-mobile">
-            New bracket
-          </Link>
-          <Link href="/dashboard" className="nav-link">
-            My brackets
-          </Link>
+          {/* AuthNav owns the links that depend on who's signed in. */}
           <AuthNav />
           <ThemeToggle />
         </nav>

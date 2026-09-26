@@ -157,3 +157,15 @@ export async function getCurrentUser(): Promise<User | null> {
     isAdmin: isAdminEmail(email),
   };
 }
+
+/**
+ * Who may create tournaments. Controlled by BRACKET_CREATION:
+ *   "admins" (default) — only accounts listed in ADMIN_EMAILS
+ *   "users"            — any signed-in account
+ * Creating without an account isn't offered either way.
+ */
+export function canCreateBrackets(user: User | null): boolean {
+  if (!user) return false;
+  const mode = (process.env.BRACKET_CREATION ?? "admins").trim().toLowerCase();
+  return mode === "users" ? true : !!user.isAdmin;
+}

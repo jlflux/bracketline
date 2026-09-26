@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   BracketData,
   BracketFormat,
@@ -17,7 +18,6 @@ import {
   newId,
   qualifierPlaceholders,
 } from "@/lib/bracket";
-import { saveLocal } from "@/lib/localBrackets";
 
 type Entry = { name: string; seed: string };
 
@@ -38,15 +38,20 @@ export default function NewBracketPage() {
   const [splitOn, setSplitOn] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
-  const [loggedIn, setLoggedIn] = useState(false);
+  /** undefined while we're still asking the server. */
+  const [access, setAccess] = useState<
+    { signedIn: boolean; canCreate: boolean } | undefined
+  >(undefined);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     fetch("/api/me")
       .then((r) => r.json())
-      .then((d) => setLoggedIn(!!d.user))
-      .catch(() => {});
+      .then((d) =>
+        setAccess({ signedIn: !!d.user, canCreate: !!d.canCreate })
+      )
+      .catch(() => setAccess({ signedIn: false, canCreate: false }));
   }, []);
 
   function resize(n: number) {
@@ -189,31 +194,61 @@ export default function NewBracketPage() {
       updatedAt: now,
     };
 
-    if (loggedIn) {
-      try {
-        const res = await fetch("/api/brackets", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data }),
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok)
-          throw new Error(
-            body.error || `Could not save bracket (error ${res.status}).`
-          );
-        router.push(`/b/${body.id}`);
-        return;
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not save bracket.");
-        setBusy(false);
-        return;
-      }
+    try {
+      const res = await fetch("/api/brackets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok)
+        throw new Error(
+          body.error || `Could not save bracket (error ${res.status}).`
+        );
+      router.push(`/b/${body.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save bracket.");
+      setBusy(false);
     }
-
-    const id = newId("local-");
-    saveLocal({ ...data, id });
-    router.push(`/b/${id}`);
   }
+
+  if (access === undefined) return null;
+
+  if (!access.canCreate)
+    return (
+      <main className="container">
+        <div className="empty-state">
+          {access.signedIn ? (
+            <>
+              <h2>Creating tournaments is limited right now</h2>
+              <p>
+                This account can view and follow tournaments, but creating new
+                ones is currently restricted while the site is being tested.
+              </p>
+              <p>
+                <Link href="/dashboard">Go to my brackets</Link>
+              </p>
+            </>
+          ) : (
+            <>
+              <h2>Sign in to create a tournament</h2>
+              <p>
+                Tournaments are saved to your account so you can run them from
+                any device and share a link.
+              </p>
+              <p style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <Link className="btn primary" href="/login?next=/new">
+                  Sign in
+                </Link>
+                <Link className="btn" href="/signup?next=/new">
+                  Create an account
+                </Link>
+              </p>
+            </>
+          )}
+        </div>
+      </main>
+    );
 
   return (
     <main className="container">
@@ -468,11 +503,7 @@ export default function NewBracketPage() {
           <button className="btn primary" onClick={create} disabled={busy}>
             {busy ? "Creating…" : "Create bracket"}
           </button>
-          <span className="hint">
-            {loggedIn
-              ? "Saved to your account."
-              : "Saved in this browser — sign in to keep it in the cloud."}
-          </span>
+          <span className="hint">Saved to your account.</span>
         </div>
       </div>
     </main>
