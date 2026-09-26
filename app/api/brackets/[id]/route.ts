@@ -44,10 +44,9 @@ export const PUT = apiHandler(async (req: NextRequest, ctx: RouteCtx) => {
   const existing = JSON.parse(String(row.data)) as BracketData;
   if (
     !incoming ||
-    !Array.isArray(incoming.slots) ||
-    incoming.slots.length !== existing.slots.length ||
     typeof incoming.name !== "string" ||
-    !incoming.name.trim()
+    !incoming.name.trim() ||
+    !(Array.isArray(incoming.slots) || Array.isArray(incoming.knockouts))
   )
     return NextResponse.json({ error: "Invalid bracket." }, { status: 400 });
 
@@ -55,8 +54,11 @@ export const PUT = apiHandler(async (req: NextRequest, ctx: RouteCtx) => {
   const stored: BracketData = {
     ...existing,
     name: incoming.name.trim().slice(0, 120),
+    sport: incoming.sport,
+    bestOf: incoming.bestOf,
     format: incoming.format === "double" ? "double" : "single",
     groupStage: incoming.groupStage,
+    knockouts: incoming.knockouts,
     slots: incoming.slots,
     results: incoming.results ?? {},
     updatedAt: now,

@@ -9,11 +9,18 @@ export type Participant = {
   seed: string;
 };
 
+/** One set/game inside a series (volleyball set, baseball game…). */
+export type GameScore = { a: number | null; b: number | null };
+
 export type MatchResult = {
+  /** Headline score shown on the bracket card. For series sports this is
+   *  sets/games won (2–1); for single-score sports it's the score itself. */
   s1: number | null;
   s2: number | null;
   /** 1 = top slot won, 2 = bottom slot won */
   winner: 1 | 2 | null;
+  /** Per-set/per-game detail for series sports. */
+  games?: GameScore[];
   /** Optional schedule info. date is "YYYY-MM-DD", time is "HH:MM". */
   location?: string;
   date?: string;
@@ -25,33 +32,224 @@ export type MatchResult = {
   p2Id?: string;
 };
 
+/* ---------------- Sports & scoring ---------------- */
+
+export type SportId =
+  | "other"
+  | "volleyball"
+  | "basketball"
+  | "football"
+  | "soccer"
+  | "baseball"
+  | "tennis";
+
+export type SportDef = {
+  label: string;
+  /** "single" = one score per side. "series" = best-of N sets/games. */
+  scoring: "single" | "series";
+  /** What one leg of a series is called. */
+  unit: string;
+  /** Allowed best-of lengths for series sports. */
+  bestOfOptions: number[];
+  defaultBestOf: number;
+  /** What the raw numbers are called. */
+  pointsLabel: string;
+};
+
+export const SPORTS: Record<SportId, SportDef> = {
+  other: {
+    label: "Other / generic",
+    scoring: "single",
+    unit: "Game",
+    bestOfOptions: [1, 3, 5, 7],
+    defaultBestOf: 1,
+    pointsLabel: "Score",
+  },
+  volleyball: {
+    label: "Volleyball",
+    scoring: "series",
+    unit: "Set",
+    bestOfOptions: [1, 3, 5],
+    defaultBestOf: 3,
+    pointsLabel: "Points",
+  },
+  basketball: {
+    label: "Basketball",
+    scoring: "single",
+    unit: "Game",
+    bestOfOptions: [1, 3, 5, 7],
+    defaultBestOf: 1,
+    pointsLabel: "Points",
+  },
+  football: {
+    label: "Football",
+    scoring: "single",
+    unit: "Game",
+    bestOfOptions: [1],
+    defaultBestOf: 1,
+    pointsLabel: "Points",
+  },
+  soccer: {
+    label: "Soccer",
+    scoring: "single",
+    unit: "Game",
+    bestOfOptions: [1],
+    defaultBestOf: 1,
+    pointsLabel: "Goals",
+  },
+  baseball: {
+    label: "Baseball / softball",
+    scoring: "series",
+    unit: "Game",
+    bestOfOptions: [1, 3, 5, 7],
+    defaultBestOf: 3,
+    pointsLabel: "Runs",
+  },
+  tennis: {
+    label: "Tennis / pickleball",
+    scoring: "series",
+    unit: "Set",
+    bestOfOptions: [1, 3, 5],
+    defaultBestOf: 3,
+    pointsLabel: "Points",
+  },
+};
+
+export function sportOf(data: BracketData): SportDef {
+  return SPORTS[data.sport ?? "other"] ?? SPORTS.other;
+}
+
+/** How many sets/games a side needs to take the match. */
+export function bestOfOf(data: BracketData): number {
+  const def = sportOf(data);
+  const n = data.bestOf ?? def.defaultBestOf;
+  return def.bestOfOptions.includes(n) ? n : def.defaultBestOf;
+}
+
+export function isSeries(data: BracketData): boolean {
+  return sportOf(data).scoring === "series" && bestOfOf(data) > 1;
+}
+
+export type GameSummary = {
+  won1: number;
+  won2: number;
+  pf1: number;
+  pf2: number;
+  winner: 1 | 2 | null;
+};
+
+/** Tally a list of set/game scores into sets won and total points. */
+export function summarizeGames(
+  games: GameScore[] | undefined,
+  bestOf: number
+): GameSummary {
+  let won1 = 0,
+    won2 = 0,
+    pf1 = 0,
+    pf2 = 0;
+  for (const g of games ?? []) {
+    if (g.a === null || g.b === null) continue;
+    pf1 += g.a;
+    pf2 += g.b;
+    if (g.a > g.b) won1++;
+    else if (g.b > g.a) won2++;
+  }
+  const need = Math.floor(bestOf / 2) + 1;
+  const winner = won1 >= need ? 1 : won2 >= need ? 2 : null;
+  return { won1, won2, pf1, pf2, winner };
+}
+
 export type BracketFormat = "single" | "double";
 
 /** Optional round-robin phase played before the knockout bracket. */
 export type GroupStage = {
-  /** How many advance from each group (1-8). */
+  /** How many advance from each group (1-8). Legacy default when a bracket
+   *  doesn't declare which places it takes. */
   advance: number;
   /** Participants per group, in listed order. */
   groups: Participant[][];
   /** Round-robin results keyed "g{group}-{i}-{j}" with i < j (member indexes). */
   results: Record<string, MatchResult>;
-  /** Manual advancement overrides: group index -> ordered participant ids.
-   *  Used instead of computed standings (e.g. complicated tiebreakers). */
+  /** Manual finishing order per group: group index -> ordered participant ids.
+   *  Used instead of computed standings (e.g. complicated tiebreakers). Any
+   *  teams left out fall in behind, in standings order. */
   overrides: Record<string, string[]>;
+};
+
+/**
+ * One knockout bracket. A tournament can run several side by side — e.g.
+ * places 1-2 from each group into "Gold", places 3-4 into "Silver".
+ */
+export type Knockout = {
+  id: string;
+  name: string;
+  /** Which group finishing places feed this bracket (1-based). Empty/absent
+   *  for brackets not fed by a group stage. */
+  takeRanks?: number[];
+  /** Slot layout for round 1, length = bracket size (power of two). null = bye. */
+  slots: (Participant | null)[];
+  /** Results keyed by match key ("r-i" winners, "Lr-i" losers, "GF", "GF2"). */
+  results: Record<string, MatchResult>;
 };
 
 export type BracketData = {
   id: string;
   name: string;
+  sport?: SportId; // absent = "other"
+  /** Series length for series sports (best of 3, 5…). */
+  bestOf?: number;
   format?: BracketFormat; // absent = "single" (pre-format brackets)
   groupStage?: GroupStage;
-  /** Slot layout for round 1, length = bracket size (power of two). null = bye. */
-  slots: (Participant | null)[];
-  /** Results keyed by match key ("r-i" winners, "Lr-i" losers, "GF", "GF2"). */
-  results: Record<string, MatchResult>;
+  /** All knockout brackets. Absent on pre-multi-bracket data — use
+   *  normalize() to upgrade before reading. */
+  knockouts?: Knockout[];
+  /** Legacy single-bracket fields, kept so old saves still load. */
+  slots?: (Participant | null)[];
+  results?: Record<string, MatchResult>;
   createdAt: number;
   updatedAt: number;
 };
+
+/** Upgrade older saves (single `slots`/`results`) to the knockouts array.
+ *  Safe to call repeatedly; call it wherever bracket data enters the app. */
+export function normalize(data: BracketData): BracketData {
+  if (data.knockouts?.length) return data;
+  return {
+    ...data,
+    knockouts: [
+      {
+        id: "main",
+        name: data.groupStage ? "Championship" : "Bracket",
+        takeRanks: data.groupStage
+          ? Array.from({ length: data.groupStage.advance }, (_, i) => i + 1)
+          : undefined,
+        slots: data.slots ?? [],
+        results: data.results ?? {},
+      },
+    ],
+  };
+}
+
+export function knockoutsOf(data: BracketData): Knockout[] {
+  return normalize(data).knockouts!;
+}
+
+/** Replace one knockout by id, returning new bracket data. */
+export function updateKnockout(
+  data: BracketData,
+  id: string,
+  patch: Partial<Knockout>
+): BracketData {
+  const knockouts = knockoutsOf(data).map((k) =>
+    k.id === id ? { ...k, ...patch } : k
+  );
+  return { ...data, knockouts, updatedAt: Date.now() };
+}
+
+/** A single knockout viewed as standalone bracket data, for the renderer. */
+export function knockoutView(data: BracketData, k: Knockout): BracketData {
+  return { ...data, slots: k.slots, results: k.results, knockouts: undefined };
+}
 
 export type Placement = "seeded" | "linear" | "random";
 
@@ -152,7 +350,13 @@ function validResult(
   if (!stored) return EMPTY;
   if (stored.p1Id !== undefined || stored.p2Id !== undefined) {
     if (stored.p1Id !== p1?.id || stored.p2Id !== p2?.id)
-      return { ...stored, s1: null, s2: null, winner: null };
+      return {
+        ...stored,
+        s1: null,
+        s2: null,
+        winner: null,
+        games: undefined,
+      };
   }
   return stored;
 }
@@ -203,11 +407,12 @@ export type ComputedBracket = {
 
 /** Single elimination: expand slots + results into rounds. */
 export function computeBracket(data: BracketData): ComputedBracket {
-  const size = data.slots.length;
+  const slots = data.slots ?? [];
+  const size = slots.length;
   const numRounds = Math.log2(size);
   const rounds: Match[][] = [];
-  let entrants: (Participant | null)[] = data.slots;
-  let alive: boolean[] = data.slots.map((s) => s !== null);
+  let entrants: (Participant | null)[] = slots;
+  let alive: boolean[] = slots.map((s) => s !== null);
 
   for (let r = 0; r < numRounds; r++) {
     const matches: Match[] = [];
@@ -223,7 +428,7 @@ export function computeBracket(data: BracketData): ComputedBracket {
         entrants[i * 2 + 1],
         alive[i * 2],
         alive[i * 2 + 1],
-        data.results
+        data.results ?? {}
       );
       matches.push(m);
       nextEntrants.push(m.winner);
@@ -255,7 +460,8 @@ export type DoubleBracket = {
  * alternating order to delay rematches.
  */
 export function computeDouble(data: BracketData): DoubleBracket {
-  const size = data.slots.length;
+  const slots = data.slots ?? [];
+  const size = slots.length;
   const k = Math.log2(size);
 
   // --- Winners bracket, also tracking each match's loser ---
@@ -263,8 +469,8 @@ export function computeDouble(data: BracketData): DoubleBracket {
   const wLoser: (Participant | null)[][] = [];
   const wLoserAlive: boolean[][] = [];
   const wNums: number[][] = [];
-  let entrants: (Participant | null)[] = data.slots;
-  let alive: boolean[] = data.slots.map((s) => s !== null);
+  let entrants: (Participant | null)[] = slots;
+  let alive: boolean[] = slots.map((s) => s !== null);
   let num = 0;
 
   for (let r = 0; r < k; r++) {
@@ -284,7 +490,7 @@ export function computeDouble(data: BracketData): DoubleBracket {
         entrants[i * 2 + 1],
         alive[i * 2],
         alive[i * 2 + 1],
-        data.results
+        data.results ?? {}
       );
       m.num = `W${++num}`;
       nums.push(num);
@@ -349,7 +555,7 @@ export function computeDouble(data: BracketData): DoubleBracket {
         p2 = prevW[i * 2 + 1];
         a2 = prevA[i * 2 + 1];
       }
-      const m = makeMatch("l", t, i, `L${t}-${i}`, p1, p2, a1, a2, data.results);
+      const m = makeMatch("l", t, i, `L${t}-${i}`, p1, p2, a1, a2, data.results ?? {});
       m.num = `L${++lNum}`;
       m.p1From = p1From;
       m.p2From = p2From;
@@ -374,7 +580,7 @@ export function computeDouble(data: BracketData): DoubleBracket {
     lbChamp,
     wbChampAlive,
     lbChampAlive,
-    data.results
+    data.results ?? {}
   );
   gf.num = "GF";
 
@@ -394,7 +600,7 @@ export function computeDouble(data: BracketData): DoubleBracket {
       gf.p2,
       true,
       true,
-      data.results
+      data.results ?? {}
     );
     gf2.num = "GF2";
     champion = gf2.result.winner
@@ -423,7 +629,7 @@ export function setResult(
   match: Match,
   result: MatchResult
 ): BracketData {
-  const results = { ...data.results };
+  const results = { ...(data.results ?? {}) };
   const prev = results[match.key];
   results[match.key] = {
     ...result,
@@ -439,7 +645,7 @@ export function setResult(
   ) {
     let r = match.round + 1;
     let i = Math.floor(match.index / 2);
-    const numRounds = Math.log2(data.slots.length);
+    const numRounds = Math.log2((data.slots ?? []).length);
     while (r < numRounds) {
       const key = `${r}-${i}`;
       const old = results[key];
@@ -465,6 +671,7 @@ export function clearScoresKeepSchedules(
         s1: null,
         s2: null,
         winner: null,
+        games: undefined,
         p1Id: undefined,
         p2Id: undefined,
       };
@@ -479,12 +686,12 @@ export function swapSlots(
   a: number,
   b: number
 ): BracketData {
-  const slots = [...data.slots];
+  const slots = [...(data.slots ?? [])];
   [slots[a], slots[b]] = [slots[b], slots[a]];
   return {
     ...data,
     slots,
-    results: clearScoresKeepSchedules(data.results),
+    results: clearScoresKeepSchedules(data.results ?? {}),
     updatedAt: Date.now(),
   };
 }
@@ -505,7 +712,7 @@ export function rearrange(
   data: BracketData,
   mode: "seeded" | "random"
 ): BracketData {
-  const participants = data.slots.filter(
+  const participants = (data.slots ?? []).filter(
     (s): s is Participant => s !== null
   );
   if (mode === "seeded")
@@ -513,16 +720,22 @@ export function rearrange(
   return {
     ...data,
     slots: buildSlots(participants, mode),
-    results: clearScoresKeepSchedules(data.results),
+    results: clearScoresKeepSchedules(data.results ?? {}),
     updatedAt: Date.now(),
   };
 }
 
-/** True if any match has a score or winner recorded (schedule info ignored). */
-export function hasProgress(data: BracketData): boolean {
-  return Object.values(data.results).some(
+function anyRecorded(results: Record<string, MatchResult>): boolean {
+  return Object.values(results).some(
     (r) => r.winner !== null || r.s1 !== null || r.s2 !== null
   );
+}
+
+/** True if any knockout match has a score or winner recorded (schedule info
+ *  and group results ignored). */
+export function hasProgress(data: BracketData): boolean {
+  if (data.results && anyRecorded(data.results)) return true;
+  return (data.knockouts ?? []).some((k) => anyRecorded(k.results));
 }
 
 export function roundName(round: number, numRounds: number): string {
@@ -536,7 +749,10 @@ export function roundName(round: number, numRounds: number): string {
 export function participantCount(data: BracketData): number {
   if (data.groupStage)
     return data.groupStage.groups.reduce((n, g) => n + g.length, 0);
-  return data.slots.filter(Boolean).length;
+  const slots = data.slots?.length
+    ? data.slots
+    : (data.knockouts?.[0]?.slots ?? []);
+  return slots.filter(Boolean).length;
 }
 
 /* ---------------- Group stage ---------------- */
@@ -592,14 +808,22 @@ export type StandingRow = {
   p: Participant;
   index: number;
   played: number;
+  /** Matches won / lost. */
   w: number;
   l: number;
+  /** Sets (or games) won / lost within those matches. */
+  setsW: number;
+  setsL: number;
+  /** Points for / against, totalled across every set played. */
   pf: number;
   pa: number;
 };
 
-/** Standings for one group: wins, then score diff, then points scored, then
- *  listed order. (Deeper tiebreaks are what the manual override is for.) */
+/**
+ * Standings for one group. Ranked by matches won, then set differential,
+ * then point differential, then points scored, then listed order. Deeper
+ * tiebreakers are what the manual finishing order is for.
+ */
 export function groupStandings(stage: GroupStage, gi: number): StandingRow[] {
   const group = stage.groups[gi];
   const rows: StandingRow[] = group.map((p, index) => ({
@@ -608,6 +832,8 @@ export function groupStandings(stage: GroupStage, gi: number): StandingRow[] {
     played: 0,
     w: 0,
     l: 0,
+    setsW: 0,
+    setsL: 0,
     pf: 0,
     pa: 0,
   }));
@@ -617,12 +843,38 @@ export function groupStandings(stage: GroupStage, gi: number): StandingRow[] {
       if (!r || !r.winner) continue;
       rows[i].played++;
       rows[j].played++;
-      if (r.s1 !== null && r.s2 !== null) {
+
+      if (r.games && r.games.length) {
+        // Series: s1/s2 are sets won; points come from the set scores.
+        for (const g of r.games) {
+          if (g.a === null || g.b === null) continue;
+          rows[i].pf += g.a;
+          rows[i].pa += g.b;
+          rows[j].pf += g.b;
+          rows[j].pa += g.a;
+          if (g.a > g.b) {
+            rows[i].setsW++;
+            rows[j].setsL++;
+          } else if (g.b > g.a) {
+            rows[j].setsW++;
+            rows[i].setsL++;
+          }
+        }
+      } else if (r.s1 !== null && r.s2 !== null) {
+        // Single score: the match itself counts as one "set".
         rows[i].pf += r.s1;
         rows[i].pa += r.s2;
         rows[j].pf += r.s2;
         rows[j].pa += r.s1;
+        if (r.winner === 1) {
+          rows[i].setsW++;
+          rows[j].setsL++;
+        } else {
+          rows[j].setsW++;
+          rows[i].setsL++;
+        }
       }
+
       if (r.winner === 1) {
         rows[i].w++;
         rows[j].l++;
@@ -635,31 +887,32 @@ export function groupStandings(stage: GroupStage, gi: number): StandingRow[] {
   return [...rows].sort(
     (a, b) =>
       b.w - a.w ||
+      b.setsW - b.setsL - (a.setsW - a.setsL) ||
       b.pf - b.pa - (a.pf - a.pa) ||
       b.pf - a.pf ||
       a.index - b.index
   );
 }
 
-/** Who advances from a group: the manual override if set (padded from
- *  standings if short), else the standings top N. */
-export function groupQualifiers(stage: GroupStage, gi: number): Participant[] {
+/**
+ * Full finishing order of a group: any manually pinned teams first (in the
+ * order they were picked), then everyone else in standings order.
+ */
+export function groupRanking(stage: GroupStage, gi: number): Participant[] {
   const standings = groupStandings(stage, gi).map((r) => r.p);
   const override = stage.overrides[String(gi)];
-  let picked: Participant[];
-  if (override && override.length > 0) {
-    const byId = new Map(stage.groups[gi].map((p) => [p.id, p]));
-    picked = override
-      .map((id) => byId.get(id))
-      .filter((p): p is Participant => !!p);
-    for (const p of standings) {
-      if (picked.length >= stage.advance) break;
-      if (!picked.some((q) => q.id === p.id)) picked.push(p);
-    }
-  } else {
-    picked = standings;
-  }
-  return picked.slice(0, stage.advance);
+  if (!override || override.length === 0) return standings;
+  const byId = new Map(stage.groups[gi].map((p) => [p.id, p]));
+  const picked = override
+    .map((id) => byId.get(id))
+    .filter((p): p is Participant => !!p);
+  const rest = standings.filter((p) => !picked.some((q) => q.id === p.id));
+  return [...picked, ...rest];
+}
+
+/** Who advances from a group into the default (first) bracket. */
+export function groupQualifiers(stage: GroupStage, gi: number): Participant[] {
+  return groupRanking(stage, gi).slice(0, stage.advance);
 }
 
 /** Order qualifiers rank-major (all winners, then all runners-up, …) so the
@@ -676,38 +929,75 @@ function orderQualifiers<T>(perGroup: T[][], advance: number): T[] {
   return out;
 }
 
-/** Placeholder entries (A1, B2, …) for a knockout that hasn't been filled
- *  from the group standings yet. */
+/** Placeholder entries (A1, B2, …) for a bracket that hasn't been filled
+ *  from the group standings yet. `ranks` are 1-based finishing places. */
 export function qualifierPlaceholders(
   groupCount: number,
-  advance: number
+  ranks: number[]
 ): Participant[] {
   const perGroup = Array.from({ length: groupCount }, (_, g) =>
-    Array.from({ length: advance }, (_, r) => ({
+    ranks.map((r) => ({
       id: `q${g}-${r}`,
-      name: `${groupLetter(g)}${r + 1}`,
-      seed: `${groupLetter(g)}${r + 1}`,
+      name: `${groupLetter(g)}${r}`,
+      seed: `${groupLetter(g)}${r}`,
     }))
   );
-  return orderQualifiers(perGroup, advance);
+  return orderQualifiers(perGroup, ranks.length);
 }
 
-/** Rebuild the knockout slots from current group standings/overrides.
- *  Knockout scores are cleared (schedules kept); group results untouched. */
-export function fillKnockout(data: BracketData): BracketData {
+/** The places a bracket takes from each group, defaulting to the group
+ *  stage's top N for brackets that don't say. */
+export function ranksOf(k: Knockout, stage?: GroupStage): number[] {
+  if (k.takeRanks?.length) return k.takeRanks;
+  if (!stage) return [];
+  return Array.from({ length: stage.advance }, (_, i) => i + 1);
+}
+
+/** Which bracket (if any) a given finishing place feeds into. */
+export function bracketForRank(
+  data: BracketData,
+  rank: number
+): Knockout | null {
+  const stage = data.groupStage;
+  if (!stage) return null;
+  for (const k of knockoutsOf(data)) {
+    if (ranksOf(k, stage).includes(rank)) return k;
+  }
+  return null;
+}
+
+/**
+ * Rebuild every knockout's slots from the current group finishing orders.
+ * Knockout scores are cleared (schedules kept); group results untouched.
+ */
+export function fillBrackets(data: BracketData): BracketData {
   const stage = data.groupStage;
   if (!stage) return data;
-  const perGroup = stage.groups.map((_, gi) => groupQualifiers(stage, gi));
-  const ordered = orderQualifiers(perGroup, stage.advance).map((p, i) => ({
-    ...p,
-    seed: p.seed || String(i + 1),
-  }));
-  return {
-    ...data,
-    slots: buildSlots(ordered, "seeded"),
-    results: clearScoresKeepSchedules(data.results),
-    updatedAt: Date.now(),
-  };
+  const rankings = stage.groups.map((_, gi) => groupRanking(stage, gi));
+
+  const knockouts = knockoutsOf(data).map((k) => {
+    const ranks = ranksOf(k, stage);
+    const perGroup = rankings.map((ranked) =>
+      ranks.map((r) => ranked[r - 1]).filter((p): p is Participant => !!p)
+    );
+    // Groups can differ in size, so a place may not exist everywhere.
+    const depth = Math.max(0, ...perGroup.map((g) => g.length));
+    const ordered = orderQualifiers(
+      perGroup.map((g) => g.concat(Array(depth - g.length).fill(undefined))),
+      depth
+    ).filter((p): p is Participant => !!p);
+    if (ordered.length < 2) return k;
+    return {
+      ...k,
+      slots: buildSlots(
+        ordered.map((p, i) => ({ ...p, seed: p.seed || String(i + 1) })),
+        "seeded"
+      ),
+      results: clearScoresKeepSchedules(k.results),
+    };
+  });
+
+  return { ...data, knockouts, updatedAt: Date.now() };
 }
 
 export function newId(prefix = ""): string {

@@ -7,13 +7,26 @@ import GroupStageView from "@/components/GroupStageView";
 import {
   BracketData,
   BracketFormat,
+  Knockout,
+  SPORTS,
+  SportId,
+  bestOfOf,
   bracketChampion,
+  buildSlots,
   bracketFormat,
-  fillKnockout,
+  fillBrackets,
   hasProgress,
+  knockoutView,
+  knockoutsOf,
+  newId,
+  normalize,
   participantCount,
+  qualifierPlaceholders,
+  ranksOf,
   rearrange,
+  sportOf,
   swapSlots,
+  updateKnockout,
 } from "@/lib/bracket";
 import {
   deleteLocal,
@@ -59,7 +72,7 @@ export default function BracketPage({
       const b = getLocal(id);
       if (!b) setNotFound(true);
       else {
-        setData(b);
+        setData(normalize(b));
         setCanEdit(true);
       }
       return;
@@ -70,7 +83,7 @@ export default function BracketPage({
         return r.json();
       })
       .then((d) => {
-        setData(d.bracket);
+        setData(normalize(d.bracket));
         setCanEdit(d.canEdit);
       })
       .catch(() => setNotFound(true));
@@ -118,10 +131,29 @@ export default function BracketPage({
     );
   }
 
+  /** Apply a change to one knockout's own slots/results. */
+  function changeKnockout(k: Knockout, next: BracketData) {
+    if (!data) return;
+    onChange(
+      updateKnockout(data, k.id, {
+        slots: next.slots ?? k.slots,
+        results: next.results ?? k.results,
+      })
+    );
+  }
+
   function arrange(mode: "seeded" | "random") {
     if (!data || !confirmRearrange()) return;
     setSeedEdit(false);
-    onChange(rearrange(data, mode));
+    let next = data;
+    for (const k of knockoutsOf(data)) {
+      const arranged = rearrange(knockoutView(data, k), mode);
+      next = updateKnockout(next, k.id, {
+        slots: arranged.slots,
+        results: arranged.results,
+      });
+    }
+    onChange(next);
     showToast(mode === "seeded" ? "Arranged by seed" : "Random draw complete");
   }
 
@@ -131,22 +163,28 @@ export default function BracketPage({
     setSeedEdit(!seedEdit);
   }
 
-  function onSwap(a: number, b: number) {
+  function onSwap(k: Knockout, a: number, b: number) {
     if (!data) return;
-    onChange(swapSlots(data, a, b));
+    const swapped = swapSlots(knockoutView(data, k), a, b);
+    onChange(
+      updateKnockout(data, k.id, {
+        slots: swapped.slots,
+        results: swapped.results,
+      })
+    );
   }
 
-  function doFillKnockout() {
+  function doFillBrackets() {
     if (!data) return;
     if (
       hasProgress(data) &&
       !confirm(
-        "Refill the knockout from the current group standings? Knockout scores will be cleared (group results and match schedules are kept)."
+        "Refill the brackets from the current group standings? Bracket scores will be cleared (group results and match schedules are kept)."
       )
     )
       return;
-    onChange(fillKnockout(data));
-    showToast("Knockout filled from group standings");
+    onChange(fillBrackets(data));
+    showToast("Brackets filled from group standings");
   }
 
   async function saveToAccount() {
@@ -195,16 +233,29 @@ export default function BracketPage({
 
   if (!data) return null;
 
-  const champion = bracketChampion(data);
+  const knockouts = knockoutsOf(data);
+  const sectioned = knockouts.length > 1 || !!data.groupStage;
+  const soleChampion = sectioned
+    ? null
+    : bracketChampion(knockoutView(data, knockouts[0]));
+  const sport = sportOf(data);
+  const bestOf = bestOfOf(data);
 
   return (
     <main className="container" style={{ maxWidth: 1400 }}>
       <div className="bracket-toolbar">
         <h1>{data.name}</h1>
-        {champion && (
-          <span className="champion-banner">🏆 {champion.name} wins</span>
+        {soleChampion && (
+          <span className="champion-banner">🏆 {soleChampion.name} wins</span>
         )}
-        <span className="hint">{participantCount(data)} players</span>
+        <span className="hint">
+          {participantCount(data)} teams
+          {sport.scoring === "series" && bestOf > 1
+            ? ` · ${sport.label}, best of ${bestOf}`
+            : sport.label !== SPORTS.other.label
+              ? ` · ${sport.label}`
+              : ""}
+        </span>
         {canEdit && (
           <button
             className={`btn small${panelOpen ? " primary" : ""}`}
@@ -248,8 +299,8 @@ export default function BracketPage({
       {seedEdit ? (
         <div className="seed-edit-banner">
           <span>
-            <strong>Custom placement:</strong> drag a player onto another to
-            swap them — or tap one, then tap the other.
+            <strong>Custom placement:</strong> drag a team onto another to swap
+            them — or tap one, then tap the other.
           </span>
           <button
             className="btn small primary"
@@ -268,8 +319,9 @@ export default function BracketPage({
       ) : (
         canEdit && (
           <p className="hint" style={{ margin: "0 0 12px" }}>
-            Click any match to enter scores, pick a winner, or set a time and
-            location.
+            Click any match to enter{" "}
+            {bestOf > 1 ? `${sport.unit.toLowerCase()} scores` : "scores"}, pick
+            a winner, or set a time and location.
           </p>
         )
       )}
@@ -279,39 +331,69 @@ export default function BracketPage({
           <div className="stage-head">
             <h2>Group stage</h2>
             <span className="hint">
-              Top {data.groupStage.advance} advance from each group
+              {knockouts
+                .map((k) => `${describeRanks(ranksOf(k, data.groupStage))} → ${k.name}`)
+                .join(" · ")}
             </span>
             {canEdit && (
-              <button className="btn small primary" onClick={doFillKnockout}>
-                Fill knockout from standings
+              <button className="btn small primary" onClick={doFillBrackets}>
+                Fill brackets from standings
               </button>
             )}
           </div>
-          <GroupStageView
-            data={data}
-            editable={canEdit}
-            onChange={onChange}
-          />
-          <div className="stage-head">
-            <h2>Knockout</h2>
-            <span className="hint">
-              A1 means Group A winner, B2 means Group B runner-up — names fill
-              in when you use the button above.
-            </span>
-          </div>
+          <GroupStageView data={data} editable={canEdit} onChange={onChange} />
         </>
       )}
-      <BracketView
-        data={data}
-        editable={canEdit}
-        onChange={onChange}
-        seedEdit={seedEdit}
-        onSwap={onSwap}
-        teamEdit={panelOpen && !seedEdit}
-      />
+
+      {knockouts.map((k) => {
+        const view = knockoutView(data, k);
+        const champ = bracketChampion(view);
+        return (
+          <div key={k.id}>
+            {sectioned && (
+              <div className="stage-head">
+                <h2>{k.name}</h2>
+                {champ ? (
+                  <span className="champion-banner">🏆 {champ.name} wins</span>
+                ) : (
+                  data.groupStage && (
+                    <span className="hint">
+                      {`A1 = Group A winner, A${
+                        ranksOf(k, data.groupStage)[0] ?? 2
+                      } = ${describeRanks([
+                        ranksOf(k, data.groupStage)[0] ?? 2,
+                      ])} in Group A. Names fill in when you use the button above.`}
+                    </span>
+                  )
+                )}
+              </div>
+            )}
+            <BracketView
+              data={view}
+              editable={canEdit}
+              onChange={(next) => changeKnockout(k, next)}
+              seedEdit={seedEdit}
+              onSwap={(a, b) => onSwap(k, a, b)}
+              teamEdit={panelOpen && !seedEdit}
+            />
+          </div>
+        );
+      })}
       {toast && <div className="toast">{toast}</div>}
     </main>
   );
+}
+
+function describeRanks(ranks: number[]): string {
+  if (ranks.length === 0) return "No places";
+  const sorted = [...ranks].sort((a, b) => a - b);
+  const ordinal = (n: number) =>
+    n + (["th", "st", "nd", "rd"][((n % 100) - 20) % 10] ?? ["th", "st", "nd", "rd"][n] ?? "th");
+  if (sorted.length === 1) return ordinal(sorted[0]);
+  const contiguous = sorted.every((r, i) => i === 0 || r === sorted[i - 1] + 1);
+  return contiguous
+    ? `${ordinal(sorted[0])}–${ordinal(sorted[sorted.length - 1])}`
+    : sorted.map(ordinal).join(", ");
 }
 
 function CustomizePanel({
@@ -332,6 +414,13 @@ function CustomizePanel({
   onDone: () => void;
 }) {
   const [name, setName] = useState(data.name);
+  const sport = sportOf(data);
+  const bestOf = bestOfOf(data);
+  const stage = data.groupStage;
+  const knockouts = knockoutsOf(data);
+  const groupSize = stage
+    ? Math.max(...stage.groups.map((g) => g.length))
+    : 0;
 
   function commitName() {
     const trimmed = name.trim();
@@ -342,19 +431,136 @@ function CustomizePanel({
     onChange({ ...data, name: trimmed.slice(0, 120), updatedAt: Date.now() });
   }
 
+  function setSport(id: SportId) {
+    const def = SPORTS[id];
+    // Keep a deliberate series length when moving between series sports;
+    // otherwise adopt the new sport's normal one (so picking Volleyball
+    // gives best-of-3 rather than inheriting a single-game default).
+    const keep =
+      sport.scoring === "series" && def.bestOfOptions.includes(bestOf);
+    onChange({
+      ...data,
+      sport: id,
+      bestOf: keep ? bestOf : def.defaultBestOf,
+      updatedAt: Date.now(),
+    });
+  }
+
+  function patchKnockout(kid: string, patch: Partial<Knockout>) {
+    onChange(updateKnockout(data, kid, patch));
+  }
+
+  function setRanks(k: Knockout, from: number, to: number) {
+    const lo = Math.max(1, Math.min(from, to));
+    const hi = Math.min(groupSize || 8, Math.max(from, to));
+    const takeRanks = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+    // Keep placeholders in step so the bracket shape previews correctly.
+    const placeholders = qualifierPlaceholders(
+      stage?.groups.length ?? 0,
+      takeRanks
+    );
+    patchKnockout(k.id, {
+      takeRanks,
+      slots:
+        placeholders.length >= 2 && !hasProgress(knockoutView(data, k))
+          ? buildPreviewSlots(placeholders)
+          : k.slots,
+    });
+  }
+
+  function addBracket() {
+    if (!stage) return;
+    const used = new Set(knockouts.flatMap((k) => ranksOf(k, stage)));
+    let next = 1;
+    while (used.has(next) && next <= groupSize) next++;
+    const takeRanks = next <= groupSize ? [next] : [groupSize];
+    onChange({
+      ...data,
+      knockouts: [
+        ...knockouts,
+        {
+          id: newId("k_"),
+          name: nextBracketName(knockouts.length),
+          takeRanks,
+          slots: buildPreviewSlots(
+            qualifierPlaceholders(stage.groups.length, takeRanks)
+          ),
+          results: {},
+        },
+      ],
+      updatedAt: Date.now(),
+    });
+  }
+
+  function removeBracket(kid: string) {
+    if (knockouts.length < 2) return;
+    onChange({
+      ...data,
+      knockouts: knockouts.filter((k) => k.id !== kid),
+      updatedAt: Date.now(),
+    });
+  }
+
   return (
     <div className="card customize-panel">
       <div className="customize-section">
-        <h2>Bracket name</h2>
+        <h2>Tournament name</h2>
         <input
           className="input"
           value={name}
           maxLength={120}
           onChange={(e) => setName(e.target.value)}
           onBlur={commitName}
-          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          onKeyDown={(e) =>
+            e.key === "Enter" && (e.target as HTMLInputElement).blur()
+          }
           aria-label="Bracket name"
         />
+      </div>
+
+      <div className="customize-section">
+        <h2>Sport &amp; scoring</h2>
+        <div className="sport-row">
+          <select
+            className="input"
+            value={data.sport ?? "other"}
+            aria-label="Sport"
+            onChange={(e) => setSport(e.target.value as SportId)}
+          >
+            {(Object.keys(SPORTS) as SportId[]).map((id) => (
+              <option key={id} value={id}>
+                {SPORTS[id].label}
+              </option>
+            ))}
+          </select>
+          {sport.bestOfOptions.length > 1 && (
+            <select
+              className="input"
+              value={bestOf}
+              aria-label="Series length"
+              onChange={(e) =>
+                onChange({
+                  ...data,
+                  bestOf: Number(e.target.value),
+                  updatedAt: Date.now(),
+                })
+              }
+            >
+              {sport.bestOfOptions.map((n) => (
+                <option key={n} value={n}>
+                  {n === 1
+                    ? "Single game"
+                    : `Best of ${n} ${sport.unit.toLowerCase()}s`}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <p className="hint" style={{ margin: "8px 0 0" }}>
+          {bestOf > 1
+            ? `Each match is won by taking ${Math.floor(bestOf / 2) + 1} ${sport.unit.toLowerCase()}s. Enter every ${sport.unit.toLowerCase()} score and the bracket advances the winner.`
+            : "Each match is decided by a single score."}
+        </p>
       </div>
 
       <div className="customize-section">
@@ -386,8 +592,8 @@ function CustomizePanel({
       <div className="customize-section">
         <h2>Placement</h2>
         <p className="hint" style={{ margin: "0 0 10px" }}>
-          How players are arranged in the bracket. Re-arranging clears scores
-          but keeps match locations and times.
+          How teams are arranged. Re-arranging clears scores but keeps match
+          locations and times.
         </p>
         <div className="placement-row">
           <button className="chip" onClick={() => onArrange("seeded")}>
@@ -405,9 +611,80 @@ function CustomizePanel({
         </div>
       </div>
 
+      {stage && (
+        <div className="customize-section span-all">
+          <h2>Brackets</h2>
+          <p className="hint" style={{ margin: "0 0 10px" }}>
+            Split the groups into separate brackets — for example places 1–2
+            into Gold and places 3–4 into Silver. Use “Fill brackets from
+            standings” once pool play is done.
+          </p>
+          <div className="splits">
+            {knockouts.map((k) => {
+              const ranks = ranksOf(k, stage);
+              const lo = ranks[0] ?? 1;
+              const hi = ranks[ranks.length - 1] ?? 1;
+              return (
+                <div key={k.id} className="split-row">
+                  <input
+                    className="input"
+                    value={k.name}
+                    maxLength={40}
+                    aria-label="Bracket name"
+                    onChange={(e) =>
+                      patchKnockout(k.id, {
+                        name: e.target.value.slice(0, 40),
+                      })
+                    }
+                  />
+                  <span className="split-label">takes places</span>
+                  <input
+                    className="input split-num"
+                    type="number"
+                    min={1}
+                    max={groupSize}
+                    value={lo}
+                    aria-label="First place taken"
+                    onChange={(e) => setRanks(k, Number(e.target.value), hi)}
+                  />
+                  <span className="split-label">to</span>
+                  <input
+                    className="input split-num"
+                    type="number"
+                    min={1}
+                    max={groupSize}
+                    value={hi}
+                    aria-label="Last place taken"
+                    onChange={(e) => setRanks(k, lo, Number(e.target.value))}
+                  />
+                  <span className="split-count">
+                    {ranks.length * stage.groups.length} teams
+                  </span>
+                  <button
+                    className="btn small ghost danger"
+                    disabled={knockouts.length < 2}
+                    onClick={() => removeBracket(k.id)}
+                    aria-label={`Remove ${k.name}`}
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            className="btn small"
+            style={{ marginTop: 10 }}
+            onClick={addBracket}
+          >
+            Add a bracket
+          </button>
+        </div>
+      )}
+
       <div className="customize-footer">
         <button className="btn small ghost danger" onClick={onDelete}>
-          Delete bracket
+          Delete tournament
         </button>
         <span style={{ flex: 1 }} />
         <button className="btn small primary" onClick={onDone}>
@@ -416,4 +693,15 @@ function CustomizePanel({
       </div>
     </div>
   );
+}
+
+function nextBracketName(count: number): string {
+  return ["Gold", "Silver", "Bronze", "Consolation"][count] ?? `Bracket ${count + 1}`;
+}
+
+/** Seed placeholder qualifiers into a preview bracket shape. */
+function buildPreviewSlots(
+  placeholders: ReturnType<typeof qualifierPlaceholders>
+) {
+  return buildSlots(placeholders, "seeded");
 }

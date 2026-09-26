@@ -7,11 +7,15 @@ import {
   Match,
   MatchResult,
   Participant,
+  bracketForRank,
   groupLetter,
   groupMatchKey,
-  groupQualifiers,
+  groupRanking,
   groupStandings,
+  isSeries,
+  knockoutsOf,
   roundRobinRounds,
+  sportOf,
 } from "@/lib/bracket";
 import { MatchEditor } from "./BracketView";
 
@@ -69,19 +73,19 @@ function fixtureAsMatch(f: Fixture): Match {
     p2Alive: true,
     result: f.result,
     isBye: false,
-    winner: f.result.winner
-      ? f.result.winner === 1
-        ? f.p1
-        : f.p2
-      : null,
+    winner: f.result.winner ? (f.result.winner === 1 ? f.p1 : f.p2) : null,
   };
 }
 
 export default function GroupStageView({ data, editable, onChange }: Props) {
   const stage = data.groupStage!;
+  const series = isSeries(data);
+  // With a single destination the highlight says it all; name it only when
+  // teams can land in different brackets.
+  const showDest = knockoutsOf(data).length > 1;
+  const sport = sportOf(data);
   const [editing, setEditing] = useState<Fixture | null>(null);
-  /** Group index currently in manual-override selection mode, with the
-   *  ordered picks so far. */
+  /** Group index currently in manual-order mode, with the picks so far. */
   const [overriding, setOverriding] = useState<number | null>(null);
   const [picks, setPicks] = useState<string[]>([]);
 
@@ -110,11 +114,7 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
 
   function togglePick(id: string) {
     setPicks((prev) =>
-      prev.includes(id)
-        ? prev.filter((x) => x !== id)
-        : prev.length < stage.advance
-          ? [...prev, id]
-          : prev
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
 
@@ -137,12 +137,17 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
     <div className="groups-grid">
       {stage.groups.map((group, gi) => {
         const standings = groupStandings(stage, gi);
-        const qualifiers = groupQualifiers(stage, gi);
-        const qualifierIds = new Set(qualifiers.map((p) => p.id));
+        const ranking = groupRanking(stage, gi);
+        const rankOf = new Map(ranking.map((p, i) => [p.id, i + 1]));
         const hasOverride = !!stage.overrides[String(gi)]?.length;
         const isOverriding = overriding === gi;
         const fixtures = fixturesFor(stage, gi);
         const played = fixtures.filter((f) => f.result.winner).length;
+
+        // Show rows in finishing order, which may be pinned manually.
+        const rows = [...standings].sort(
+          (a, b) => (rankOf.get(a.p.id) ?? 99) - (rankOf.get(b.p.id) ?? 99)
+        );
 
         return (
           <div key={gi} className="card group-card">
@@ -165,16 +170,16 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
                       disabled={picks.length === 0}
                       onClick={saveOverride}
                     >
-                      Save picks
+                      Save order
                     </button>
                   </span>
                 ) : (
                   <button
                     className="btn small ghost"
                     onClick={() => startOverride(gi)}
-                    title="Pick who advances manually (tiebreakers, forfeits…)"
+                    title="Set the finishing order by hand (tiebreakers, forfeits…)"
                   >
-                    {hasOverride ? "Edit advancers ✱" : "Advance manually"}
+                    {hasOverride ? "Edit order ✱" : "Set order"}
                   </button>
                 ))}
             </div>
@@ -182,63 +187,76 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
             {isOverriding && (
               <p className="hint" style={{ margin: "0 0 8px" }}>
                 Tap teams in finishing order — first tap is the group winner.
-                {` ${picks.length}/${stage.advance} picked.`}
+                Any you skip stay in standings order behind them.
               </p>
             )}
 
-            <table className="standings">
-              <thead>
-                <tr>
-                  <th></th>
-                  <th className="team-col">Team</th>
-                  <th>W</th>
-                  <th>L</th>
-                  <th>+/−</th>
-                </tr>
-              </thead>
-              <tbody>
-                {standings.map((row, rank) => {
-                  const pickIndex = picks.indexOf(row.p.id);
-                  const advancing = isOverriding
-                    ? pickIndex >= 0
-                    : qualifierIds.has(row.p.id);
-                  return (
-                    <tr
-                      key={row.p.id}
-                      className={`${advancing ? "advancing" : ""}${
-                        isOverriding ? " pickable" : ""
-                      }`}
-                      onClick={
-                        isOverriding ? () => togglePick(row.p.id) : undefined
-                      }
-                    >
-                      <td className="rank">
-                        {isOverriding
-                          ? pickIndex >= 0
-                            ? pickIndex + 1
-                            : "·"
-                          : rank + 1}
-                      </td>
-                      <td className="team-col">
-                        {row.p.seed && (
-                          <span className="seed-tag">{row.p.seed}</span>
-                        )}{" "}
-                        {row.p.name}
-                      </td>
-                      <td>{row.w}</td>
-                      <td>{row.l}</td>
-                      <td>
-                        {row.pf - row.pa > 0 ? "+" : ""}
-                        {row.pf - row.pa}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="standings-wrap">
+              <table className="standings">
+                <thead>
+                  <tr>
+                    <th className="rank-col"></th>
+                    <th className="team-col">Team</th>
+                    <th title="Matches won">W</th>
+                    <th title="Matches lost">L</th>
+                    {series && (
+                      <>
+                        <th title={`${sport.unit}s won`}>SW</th>
+                        <th title={`${sport.unit}s lost`}>SL</th>
+                      </>
+                    )}
+                    <th title={`${sport.pointsLabel} for`}>PF</th>
+                    <th title={`${sport.pointsLabel} against`}>PA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const rank = rankOf.get(row.p.id) ?? 0;
+                    const dest = bracketForRank(data, rank);
+                    const pickIndex = picks.indexOf(row.p.id);
+                    const advancing = isOverriding ? pickIndex >= 0 : !!dest;
+                    return (
+                      <tr
+                        key={row.p.id}
+                        className={`${advancing ? "advancing" : ""}${
+                          isOverriding ? " pickable" : ""
+                        }`}
+                        onClick={
+                          isOverriding ? () => togglePick(row.p.id) : undefined
+                        }
+                      >
+                        <td className="rank">
+                          {isOverriding
+                            ? pickIndex >= 0
+                              ? pickIndex + 1
+                              : "·"
+                            : rank}
+                        </td>
+                        <td className="team-col">
+                          <span className="team-name">{row.p.name}</span>
+                          {!isOverriding && dest && showDest && (
+                            <span className="dest-badge">{dest.name}</span>
+                          )}
+                        </td>
+                        <td>{row.w}</td>
+                        <td>{row.l}</td>
+                        {series && (
+                          <>
+                            <td>{row.setsW}</td>
+                            <td>{row.setsL}</td>
+                          </>
+                        )}
+                        <td>{row.pf}</td>
+                        <td>{row.pa}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
             {hasOverride && !isOverriding && (
               <p className="hint" style={{ margin: "6px 0 0" }}>
-                ✱ Advancement set manually.
+                ✱ Finishing order set by hand.
               </p>
             )}
 
@@ -255,12 +273,22 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
                   >
                     {f.p1.name}
                   </span>
-                  <span className="fx-score">
-                    {f.result.winner
-                      ? f.result.s1 !== null && f.result.s2 !== null
-                        ? `${f.result.s1}–${f.result.s2}`
-                        : "✓"
-                      : "vs"}
+                  <span className="fx-mid">
+                    <span className="fx-score">
+                      {f.result.winner
+                        ? f.result.s1 !== null && f.result.s2 !== null
+                          ? `${f.result.s1}–${f.result.s2}`
+                          : "✓"
+                        : "vs"}
+                    </span>
+                    {f.result.games && (
+                      <span className="fx-sets">
+                        {f.result.games
+                          .filter((g) => g.a !== null && g.b !== null)
+                          .map((g) => `${g.a}-${g.b}`)
+                          .join(", ")}
+                      </span>
+                    )}
                   </span>
                   <span
                     className={`fx-team right${
@@ -279,6 +307,7 @@ export default function GroupStageView({ data, editable, onChange }: Props) {
       {editing && (
         <MatchEditor
           match={fixtureAsMatch(editing)}
+          data={data}
           onSave={(res) => saveFixture(editing, res)}
           onClose={() => setEditing(null)}
         />

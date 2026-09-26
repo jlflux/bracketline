@@ -741,23 +741,42 @@ textarea {
   display: inline-flex;
   gap: 6px;
 }
+.standings-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .standings {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 13.5px;
+  /* Fixed layout keeps the numeric columns intact and truncates long team
+     names instead of pushing Points Against off the card. */
+  table-layout: fixed;
+}
+.standings th,
+.standings td {
+  width: 30px;
+}
+.standings th.rank-col,
+.standings td.rank {
+  width: 22px;
+}
+.standings th.team-col,
+.standings td.team-col {
+  width: auto;
 }
 .standings th {
   text-align: center;
   font-size: 11.5px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
   font-weight: 700;
-  padding: 4px 6px;
+  padding: 4px 3px;
   border-bottom: 1px solid var(--border);
 }
 .standings td {
-  padding: 7px 6px;
+  padding: 6px 3px;
   text-align: center;
   border-bottom: 1px solid var(--border);
   font-variant-numeric: tabular-nums;
@@ -768,6 +787,36 @@ textarea {
 }
 .standings td.team-col {
   font-weight: 600;
+}
+.standings td.team-col {
+  overflow: hidden;
+}
+.standings .team-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dest-badge {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  vertical-align: 1px;
+}
+[data-theme="dark"] .dest-badge {
+  color: var(--accent);
 }
 .standings .rank {
   color: var(--text-muted);
@@ -825,6 +874,19 @@ textarea {
 .fixture .fx-team.won {
   font-weight: 700;
 }
+.fixture .fx-mid {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 68px;
+}
+.fixture .fx-sets {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .fixture .fx-score {
   flex: none;
   min-width: 44px;
@@ -841,6 +903,124 @@ textarea {
   color: var(--accent);
 }
 
+/* ---------- Set-by-set scoring ---------- */
+.sets-editor {
+  display: grid;
+  gap: 6px;
+}
+.sets-row {
+  display: grid;
+  grid-template-columns: 1fr 82px 82px;
+  gap: 8px;
+  align-items: center;
+}
+.sets-row.sets-head {
+  margin-bottom: 2px;
+}
+.set-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.set-team {
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 6px 5px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  min-height: 42px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.set-team:hover {
+  border-color: var(--border-strong);
+}
+.set-team.won {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+  color: var(--accent-strong);
+}
+[data-theme="dark"] .set-team.won {
+  color: var(--accent);
+}
+.set-input {
+  text-align: center;
+  font-weight: 700;
+  padding: 8px 4px;
+}
+.sets-summary {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--accent-strong);
+}
+[data-theme="dark"] .sets-summary {
+  color: var(--accent);
+}
+
+/* ---------- Sport & bracket-split settings ---------- */
+.sport-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.split-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1.45;
+}
+.split-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.splits {
+  display: grid;
+  gap: 8px;
+}
+.split-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.split-row > .input:first-child {
+  width: 150px;
+  font-weight: 600;
+}
+.split-num {
+  width: 62px;
+  text-align: center;
+  font-weight: 700;
+}
+.split-label {
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+.split-count {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+[data-theme="dark"] .split-count {
+  color: var(--accent);
+}
+.customize-section.span-all {
+  grid-column: 1 / -1;
+}
+
 /* ---------- Match editor modal ---------- */
 .modal-backdrop {
   position: fixed;
@@ -855,7 +1035,7 @@ textarea {
 }
 .modal {
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
   padding: 22px;
   animation: pop 0.16s ease;
 }

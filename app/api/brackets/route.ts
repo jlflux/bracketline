@@ -19,7 +19,7 @@ export const GET = apiHandler(async () => {
     sql: "SELECT id, name, data FROM brackets WHERE user_id = ? ORDER BY updated_at DESC",
     args: [user.id],
   });
-  const brackets = res.rows.map((r) => {
+  const brackets = res.rows.map((r: Record<string, unknown>) => {
     const data = JSON.parse(String(r.data)) as BracketData;
     return {
       id: String(r.id),
@@ -31,18 +31,45 @@ export const GET = apiHandler(async () => {
   return NextResponse.json({ brackets });
 });
 
+function validSlots(
+  slots: unknown,
+  groupFed: boolean
+): slots is (unknown | null)[] {
+  if (!Array.isArray(slots)) return false;
+  const size = slots.length;
+  if (size < 2 || size > 256 || (size & (size - 1)) !== 0) return false;
+  // A bracket fed by a group stage can have as few as 2 qualifier slots.
+  const n = slots.filter(Boolean).length;
+  const min = groupFed ? 2 : MIN_PARTICIPANTS;
+  if (n < min || n > MAX_PARTICIPANTS) return false;
+  for (const s of slots) {
+    if (s === null) continue;
+    const p = s as { name?: unknown; seed?: unknown };
+    if (typeof p.name !== "string" || typeof p.seed !== "string") return false;
+    if (p.name.length > 80 || p.seed.length > 20) return false;
+  }
+  return true;
+}
+
 function validate(data: unknown): data is BracketData {
   const d = data as BracketData;
   if (!d || typeof d !== "object") return false;
   if (typeof d.name !== "string" || !d.name.trim() || d.name.length > 120)
     return false;
-  if (!Array.isArray(d.slots)) return false;
-  const size = d.slots.length;
-  if (size < 4 || size > 256 || (size & (size - 1)) !== 0) return false;
-  // A knockout fed by a group stage can have as few as 2 qualifier slots.
-  const n = d.slots.filter(Boolean).length;
-  const min = d.groupStage ? 2 : MIN_PARTICIPANTS;
-  if (n < min || n > MAX_PARTICIPANTS) return false;
+
+  const groupFed = !!d.groupStage;
+  const knockouts = d.knockouts;
+  if (knockouts !== undefined) {
+    if (!Array.isArray(knockouts) || knockouts.length === 0) return false;
+    if (knockouts.length > 8) return false;
+    for (const k of knockouts) {
+      if (!k || typeof k.name !== "string" || k.name.length > 40) return false;
+      if (!validSlots(k.slots, groupFed)) return false;
+      if (typeof k.results !== "object" || k.results === null) return false;
+    }
+  } else if (!validSlots(d.slots, groupFed)) {
+    return false;
+  }
   if (d.groupStage) {
     const g = d.groupStage;
     if (!Array.isArray(g.groups) || g.groups.length < 2) return false;
@@ -58,12 +85,6 @@ function validate(data: unknown): data is BracketData {
     )
       return false;
   }
-  for (const s of d.slots) {
-    if (s === null) continue;
-    if (typeof s.name !== "string" || typeof s.seed !== "string") return false;
-    if (s.name.length > 80 || s.seed.length > 20) return false;
-  }
-  if (typeof d.results !== "object" || d.results === null) return false;
   return true;
 }
 

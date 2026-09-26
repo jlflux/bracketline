@@ -3,14 +3,19 @@
 import { useMemo, useState } from "react";
 import {
   BracketData,
+  GameScore,
   Match,
   MatchResult,
   Participant,
+  bestOfOf,
   bracketFormat,
   computeBracket,
   computeDouble,
+  isSeries,
   roundName,
   setResult,
+  sportOf,
+  summarizeGames,
 } from "@/lib/bracket";
 
 const CARD_W = 220;
@@ -340,7 +345,7 @@ export default function BracketView({
 
   function saveTeams(edited: Participant[]) {
     const byId = new Map(edited.map((p) => [p.id, p]));
-    const slots = data.slots.map((s) => (s && byId.get(s.id)) || s);
+    const slots = (data.slots ?? []).map((s) => (s && byId.get(s.id)) || s);
     onChange?.({ ...data, slots, updatedAt: Date.now() });
     setTeamEditing(null);
   }
@@ -453,6 +458,7 @@ export default function BracketView({
       {editing && (
         <MatchEditor
           match={editing}
+          data={data}
           onSave={(res) => saveResult(editing, res)}
           onClose={() => setEditing(null)}
         />
@@ -573,15 +579,29 @@ function Slot({
 
 export function MatchEditor({
   match,
+  data,
   onSave,
   onClose,
 }: {
   match: Match;
+  /** Bracket the match belongs to — supplies the sport and series length. */
+  data: BracketData;
   onSave: (result: MatchResult) => void;
   onClose: () => void;
 }) {
+  const sport = sportOf(data);
+  const bestOf = bestOfOf(data);
+  const series = isSeries(data);
+  const needed = Math.floor(bestOf / 2) + 1;
+
   const [s1, setS1] = useState(match.result.s1?.toString() ?? "");
   const [s2, setS2] = useState(match.result.s2?.toString() ?? "");
+  const [games, setGames] = useState<GameScore[]>(() =>
+    Array.from(
+      { length: bestOf },
+      (_, i) => match.result.games?.[i] ?? { a: null, b: null }
+    )
+  );
   const [winner, setWinner] = useState<1 | 2 | null>(match.result.winner);
   const [location, setLocation] = useState(match.result.location ?? "");
   const [date, setDate] = useState(match.result.date ?? "");
@@ -601,6 +621,17 @@ export function MatchEditor({
     if (a !== null && b !== null && a !== b) setWinner(a > b ? 1 : 2);
   }
 
+  function updateGame(i: number, side: "a" | "b", v: string) {
+    setGames((prev) =>
+      prev.map((g, j) => (j === i ? { ...g, [side]: num(v) } : g))
+    );
+  }
+
+  const summary = summarizeGames(games, bestOf);
+  const playedAny = games.some((g) => g.a !== null && g.b !== null);
+  // Scores decide the match; tapping a name only covers forfeits.
+  const effectiveWinner = series ? (summary.winner ?? winner) : winner;
+
   function schedule() {
     return {
       location: location.trim() || undefined,
@@ -610,37 +641,113 @@ export function MatchEditor({
   }
 
   function save() {
-    onSave({ s1: num(s1), s2: num(s2), winner, ...schedule() });
+    if (series) {
+      onSave({
+        s1: playedAny ? summary.won1 : null,
+        s2: playedAny ? summary.won2 : null,
+        winner: effectiveWinner,
+        games: playedAny ? games : undefined,
+        ...schedule(),
+      });
+    } else {
+      onSave({ s1: num(s1), s2: num(s2), winner, ...schedule() });
+    }
   }
+
+  const name1 = match.p1?.name ?? "Team 1";
+  const name2 = match.p2?.name ?? "Team 2";
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
         <h2>Match details{match.num ? ` — ${match.num}` : ""}</h2>
-        <p className="sub">Tap a player to mark the winner, or enter scores.</p>
-        {([1, 2] as const).map((side) => {
-          const p = side === 1 ? match.p1 : match.p2;
-          return (
-            <div
-              key={side}
-              className={`score-edit-row${winner === side ? " winner" : ""}`}
-              onClick={() => setWinner(winner === side ? null : side)}
-            >
-              {p?.seed ? <span className="seed-tag">{p.seed}</span> : null}
-              <span className="p-name">{p?.name}</span>
-              <span className="win-mark">WIN</span>
-              <input
-                className="input score-input"
-                type="number"
-                inputMode="numeric"
-                placeholder="—"
-                value={side === 1 ? s1 : s2}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => updateScore(side, e.target.value)}
-              />
+        <p className="sub">
+          {series
+            ? `Best of ${bestOf} — first to ${needed} ${sport.unit.toLowerCase()}${
+                needed > 1 ? "s" : ""
+              }. Enter the ${sport.pointsLabel.toLowerCase()} in each ${sport.unit.toLowerCase()}.`
+            : "Tap a team to mark the winner, or enter scores."}
+        </p>
+
+        {series ? (
+          <div className="sets-editor">
+            <div className="sets-row sets-head">
+              <span className="set-label" />
+              {([1, 2] as const).map((side) => (
+                <button
+                  key={side}
+                  type="button"
+                  className={`set-team${
+                    effectiveWinner === side ? " won" : ""
+                  }`}
+                  title="Tap to award the match without scores (forfeit)"
+                  onClick={() => setWinner(winner === side ? null : side)}
+                >
+                  {side === 1 ? name1 : name2}
+                </button>
+              ))}
             </div>
-          );
-        })}
+            {games.map((g, i) => (
+              <div className="sets-row" key={i}>
+                <span className="set-label">
+                  {sport.unit} {i + 1}
+                </span>
+                <input
+                  className="input set-input"
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="—"
+                  aria-label={`${sport.unit} ${i + 1}, ${name1}`}
+                  value={g.a ?? ""}
+                  onChange={(e) => updateGame(i, "a", e.target.value)}
+                />
+                <input
+                  className="input set-input"
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="—"
+                  aria-label={`${sport.unit} ${i + 1}, ${name2}`}
+                  value={g.b ?? ""}
+                  onChange={(e) => updateGame(i, "b", e.target.value)}
+                />
+              </div>
+            ))}
+            <p className="sets-summary">
+              {effectiveWinner
+                ? `${effectiveWinner === 1 ? name1 : name2} wins ${Math.max(
+                    summary.won1,
+                    summary.won2
+                  )}–${Math.min(summary.won1, summary.won2)}`
+                : playedAny
+                  ? `${summary.won1}–${summary.won2} — not decided yet`
+                  : "No sets recorded yet"}
+            </p>
+          </div>
+        ) : (
+          ([1, 2] as const).map((side) => {
+            const p = side === 1 ? match.p1 : match.p2;
+            return (
+              <div
+                key={side}
+                className={`score-edit-row${winner === side ? " winner" : ""}`}
+                onClick={() => setWinner(winner === side ? null : side)}
+              >
+                {p?.seed ? <span className="seed-tag">{p.seed}</span> : null}
+                <span className="p-name">{p?.name}</span>
+                <span className="win-mark">WIN</span>
+                <input
+                  className="input score-input"
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="—"
+                  value={side === 1 ? s1 : s2}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => updateScore(side, e.target.value)}
+                />
+              </div>
+            );
+          })
+        )}
 
         <div className="schedule-fields">
           <div className="field" style={{ marginBottom: 0 }}>
@@ -682,7 +789,13 @@ export function MatchEditor({
           <button
             className="btn ghost danger"
             onClick={() =>
-              onSave({ s1: null, s2: null, winner: null, ...schedule() })
+              onSave({
+                s1: null,
+                s2: null,
+                winner: null,
+                games: undefined,
+                ...schedule(),
+              })
             }
           >
             Clear result

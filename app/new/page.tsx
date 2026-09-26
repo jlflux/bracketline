@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   BracketData,
   BracketFormat,
+  Knockout,
   MAX_GROUPS,
   MAX_GROUP_SIZE,
   MAX_PARTICIPANTS,
   MIN_PARTICIPANTS,
+  SPORTS,
+  SportId,
   buildSlots,
   distributeGroups,
   newId,
@@ -26,9 +29,13 @@ export default function NewBracketPage() {
     Array.from({ length: 8 }, () => ({ name: "", seed: "" }))
   );
   const [format, setFormat] = useState<BracketFormat>("single");
+  const [sport, setSport] = useState<SportId>("other");
+  const [bestOf, setBestOf] = useState(1);
   const [groupsOn, setGroupsOn] = useState(false);
   const [groupCount, setGroupCount] = useState(2);
   const [advance, setAdvance] = useState(2);
+  /** Extra bracket fed by the lower places, e.g. Silver. */
+  const [splitOn, setSplitOn] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
@@ -106,14 +113,66 @@ export default function NewBracketPage() {
         );
         return;
       }
+      if (splitOn && advance >= minSize) {
+        setError(
+          `A second bracket needs teams left over — advancing ${advance} of ${minSize} leaves none.`
+        );
+        return;
+      }
     }
 
     setBusy(true);
     setError("");
     const now = Date.now();
+
+    let knockouts: Knockout[];
+    if (groupsOn) {
+      const maxSize = Math.ceil(participants.length / groupCount);
+      const topRanks = Array.from({ length: advance }, (_, i) => i + 1);
+      knockouts = [
+        {
+          id: "main",
+          name: splitOn ? "Gold" : "Championship",
+          takeRanks: topRanks,
+          slots: buildSlots(
+            qualifierPlaceholders(groupCount, topRanks),
+            "seeded"
+          ),
+          results: {},
+        },
+      ];
+      if (splitOn) {
+        const lowerRanks = Array.from(
+          { length: maxSize - advance },
+          (_, i) => advance + i + 1
+        );
+        knockouts.push({
+          id: newId("k_"),
+          name: "Silver",
+          takeRanks: lowerRanks,
+          slots: buildSlots(
+            qualifierPlaceholders(groupCount, lowerRanks),
+            "seeded"
+          ),
+          results: {},
+        });
+      }
+    } else {
+      knockouts = [
+        {
+          id: "main",
+          name: "Bracket",
+          slots: buildSlots(participants, "seeded"),
+          results: {},
+        },
+      ];
+    }
+
     const data: BracketData = {
       id: "",
       name: title,
+      sport,
+      bestOf,
       format,
       groupStage: groupsOn
         ? {
@@ -123,9 +182,8 @@ export default function NewBracketPage() {
             overrides: {},
           }
         : undefined,
-      slots: groupsOn
-        ? buildSlots(qualifierPlaceholders(groupCount, advance), "seeded")
-        : buildSlots(participants, "seeded"),
+      knockouts,
+      slots: knockouts[0].slots,
       results: {},
       createdAt: now,
       updatedAt: now,
@@ -197,6 +255,50 @@ export default function NewBracketPage() {
                 onChange={(e) => resize(Number(e.target.value) || count)}
               />
             </div>
+          </div>
+          <div className="field">
+            <label htmlFor="bsport">Sport &amp; scoring</label>
+            <div className="sport-row">
+              <select
+                id="bsport"
+                className="input"
+                value={sport}
+                onChange={(e) => {
+                  const id = e.target.value as SportId;
+                  setSport(id);
+                  setBestOf(SPORTS[id].defaultBestOf);
+                }}
+              >
+                {(Object.keys(SPORTS) as SportId[]).map((id) => (
+                  <option key={id} value={id}>
+                    {SPORTS[id].label}
+                  </option>
+                ))}
+              </select>
+              {SPORTS[sport].bestOfOptions.length > 1 && (
+                <select
+                  className="input"
+                  value={bestOf}
+                  aria-label="Series length"
+                  onChange={(e) => setBestOf(Number(e.target.value))}
+                >
+                  {SPORTS[sport].bestOfOptions.map((n) => (
+                    <option key={n} value={n}>
+                      {n === 1
+                        ? "Single game"
+                        : `Best of ${n} ${SPORTS[sport].unit.toLowerCase()}s`}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            {bestOf > 1 && (
+              <span className="hint">
+                Enter every {SPORTS[sport].unit.toLowerCase()} score; the match
+                goes to the first team to win{" "}
+                {Math.floor(bestOf / 2) + 1}.
+              </span>
+            )}
           </div>
           <div className="field">
             <label>Format</label>
@@ -271,14 +373,30 @@ export default function NewBracketPage() {
                   ))}
                 </select>
               </div>
+              <label className="split-toggle" style={{ gridColumn: "1 / -1" }}>
+                <input
+                  type="checkbox"
+                  checked={splitOn}
+                  onChange={(e) => setSplitOn(e.target.checked)}
+                />
+                <span>
+                  Also run a Silver bracket for the teams that don&apos;t
+                  advance
+                </span>
+              </label>
               <p className="hint" style={{ gridColumn: "1 / -1", margin: 0 }}>
-                {count} players → {groupCount} round-robin groups of{" "}
+                {count} teams → {groupCount} round-robin groups of{" "}
                 {Math.ceil(count / groupCount)}
                 {count % groupCount !== 0
                   ? `–${Math.floor(count / groupCount)}`
                   : ""}{" "}
-                → {groupCount * advance} advance to the knockout. You can
-                override who advances from each group later.
+                → top {advance} of each group ({groupCount * advance} teams)
+                into the {splitOn ? "Gold" : "Championship"} bracket
+                {splitOn
+                  ? `, the rest (${count - groupCount * advance} teams) into Silver`
+                  : ""}
+                . You can rename the brackets, change the split, or set the
+                finishing order by hand later.
               </p>
             </div>
           )}

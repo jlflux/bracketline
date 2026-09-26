@@ -7,6 +7,15 @@ themes, a light-blue accent, and a layout that works on desktop and phone.
 
 ## Features
 
+- **Sports and scoring** — pick a sport when you create a tournament.
+  Football, basketball and soccer use a single score per match; volleyball,
+  tennis and baseball are scored set by set (or game by game) as a best of
+  1/3/5/7. The bracket shows the series score (2–1) and the individual set
+  scores live behind the match.
+- **Group play into one or more brackets** — round-robin groups with live
+  standings (matches won/lost, sets won/lost, points for/against), then send
+  each finishing place wherever you want: places 1–2 into Gold, 3–4 into
+  Silver, and so on.
 - **Any bracket size from 3 to 128** — byes are placed automatically using
   standard seeding, so top entries get the byes and every bracket plays out
   fairly. Empty sections of the draw resolve as walkovers.
@@ -75,10 +84,11 @@ flow still works. To send real emails, add a `RESEND_API_KEY` from
 
 | Path | Purpose |
 | --- | --- |
-| `lib/bracket.ts` | Bracket model: seeding order, bye placement, match computation, result propagation |
+| `lib/bracket.ts` | Tournament model: sports/scoring, seeding order, bye placement, single & double elimination, group standings, multi-bracket qualification |
 | `lib/db.ts`, `lib/auth.ts` | SQLite schema, scrypt password hashing, cookie sessions |
 | `lib/localBrackets.ts` | Browser-side storage for guest brackets |
-| `components/BracketView.tsx` | Bracket renderer (positioned cards + SVG connectors) and match editor |
+| `components/BracketView.tsx` | Bracket renderer (positioned cards + SVG connectors) and the match editor (single score or set-by-set) |
+| `components/GroupStageView.tsx` | Group standings tables, round-robin fixtures, manual finishing order |
 | `app/new` | Bracket builder |
 | `app/b/[id]` | Bracket viewer/editor (`local-*` ids live in the browser) |
 | `app/dashboard` | List of cloud + local brackets |
@@ -87,5 +97,4 @@ flow still works. To send real emails, add a `RESEND_API_KEY` from
 ## Roadmap ideas
 
 - Paid plans (more saved brackets, custom branding)
-- Double elimination and round robin
 - Real-time spectating
