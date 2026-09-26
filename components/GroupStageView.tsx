@@ -13,6 +13,8 @@ import {
   groupMatchKey,
   groupRanking,
   groupStandings,
+  formatSchedule,
+  hasSchedule,
   isSeries,
   knockoutsOf,
   moveTeamToGroup,
@@ -389,6 +391,7 @@ export default function GroupStageView({
                   disabled={moveMode}
                   onClick={() => setEditing(f)}
                 >
+                  <span className="fixture-main">
                   <span
                     className={`fx-team${f.result.winner === 1 ? " won" : ""}${
                       f.p1.id === favorite ? " fav" : ""
@@ -420,6 +423,12 @@ export default function GroupStageView({
                   >
                     {f.p2.name}
                   </span>
+                  </span>
+                  {hasSchedule(f.result) && (
+                    <span className="fixture-when">
+                      {formatSchedule(f.result)}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

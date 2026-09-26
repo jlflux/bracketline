@@ -1268,3 +1268,45 @@ export function ordinal(n: number): string {
   if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
   return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 }
+
+/* ---------------- Schedules ---------------- */
+
+/** True once a match has any schedule detail recorded. */
+export function hasSchedule(r: MatchResult): boolean {
+  return !!(r.location || r.date || r.time);
+}
+
+/**
+ * A match's schedule in one short line: "Fri, 10/2 @ 4:30 pm · Court 4".
+ * Only the parts that were actually entered appear.
+ */
+export function formatSchedule(r: MatchResult): string {
+  let day = "";
+  if (r.date) {
+    // Parse as local time — "2026-10-02" alone is treated as UTC and can
+    // slip to the previous day in western time zones.
+    const d = new Date(r.date + "T00:00");
+    if (!isNaN(d.getTime())) {
+      const weekday = d.toLocaleDateString(undefined, { weekday: "short" });
+      const md = d.toLocaleDateString(undefined, {
+        month: "numeric",
+        day: "numeric",
+      });
+      day = `${weekday}, ${md}`;
+    }
+  }
+
+  let time = "";
+  if (r.time) {
+    const t = new Date("2000-01-01T" + r.time);
+    time = isNaN(t.getTime())
+      ? r.time
+      : t
+          .toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+          // "4:30 PM" reads better lowercase next to the date.
+          .replace(/\s*([AP]M)$/i, (_, m) => ` ${m.toLowerCase()}`);
+  }
+
+  const when = day && time ? `${day} @ ${time}` : day || time;
+  return [when, r.location].filter(Boolean).join(" · ");
+}

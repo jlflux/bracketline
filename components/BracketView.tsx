@@ -11,6 +11,8 @@ import {
   bracketFormat,
   computeBracket,
   computeDouble,
+  formatSchedule,
+  hasSchedule,
   isSeries,
   roundName,
   setResult,
@@ -51,10 +53,6 @@ type Layout = {
   width: number;
   height: number;
 };
-
-function hasSchedule(r: MatchResult): boolean {
-  return !!(r.location || r.date || r.time);
-}
 
 function cardH(m: Match): number {
   return CARD_H + (hasSchedule(m.result) ? INFO_H : 0);
@@ -478,30 +476,6 @@ export default function BracketView({
       )}
     </div>
   );
-}
-
-function formatSchedule(r: MatchResult): string {
-  const parts: string[] = [];
-  if (r.date) {
-    const d = new Date(r.date + "T00:00");
-    if (!isNaN(d.getTime()))
-      parts.push(
-        d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-      );
-  }
-  if (r.time) {
-    const d = new Date("2000-01-01T" + r.time);
-    parts.push(
-      isNaN(d.getTime())
-        ? r.time
-        : d.toLocaleTimeString(undefined, {
-            hour: "numeric",
-            minute: "2-digit",
-          })
-    );
-  }
-  if (r.location) parts.push(r.location);
-  return parts.join(" · ");
 }
 
 function Slot({
