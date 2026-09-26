@@ -10,7 +10,7 @@ export const GET = apiHandler(async (_req: NextRequest, ctx: RouteCtx) => {
   const { id } = await ctx.params;
   const db = await getDb();
   const res = await db.execute({
-    sql: "SELECT user_id, data FROM brackets WHERE id = ?",
+    sql: "SELECT user_id, data, slug FROM brackets WHERE id = ?",
     args: [id],
   });
   const row = res.rows[0];
@@ -20,6 +20,7 @@ export const GET = apiHandler(async (_req: NextRequest, ctx: RouteCtx) => {
   return NextResponse.json({
     bracket: JSON.parse(String(row.data)),
     canEdit: user?.id === String(row.user_id),
+    slug: row.slug ? String(row.slug) : null,
   });
 });
 

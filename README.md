@@ -72,6 +72,21 @@ Vercel's serverless filesystem is ephemeral, so the database lives in
    `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
 4. Deploy. Tables are created automatically on first use.
 
+### Custom links
+
+Brackets are normally at `/b/<id>`. An admin can also give one a custom link
+at the root of the site — `yourdomain.com/blalock2026` — from the bracket's
+Customize panel. Set `ADMIN_EMAILS` to a comma-separated list of the accounts
+allowed to do this:
+
+```
+ADMIN_EMAILS=you@example.com
+```
+
+Links are lowercase letters, numbers and hyphens, must be unique, and can't
+take one of the app's own paths (`new`, `login`, `dashboard`, …). The original
+`/b/<id>` link keeps working alongside the custom one.
+
 ### Password-reset emails
 
 Reset links are generated whether or not email is configured — without a key
@@ -87,10 +102,13 @@ flow still works. To send real emails, add a `RESEND_API_KEY` from
 | `lib/bracket.ts` | Tournament model: sports/scoring, seeding order, bye placement, single & double elimination, group standings, multi-bracket qualification |
 | `lib/db.ts`, `lib/auth.ts` | SQLite schema, scrypt password hashing, cookie sessions |
 | `lib/localBrackets.ts` | Browser-side storage for guest brackets |
+| `lib/slug.ts` | Custom-link validation and reserved paths |
+| `components/BracketPage.tsx` | The bracket screen, shared by `/b/[id]` and custom links |
 | `components/BracketView.tsx` | Bracket renderer (positioned cards + SVG connectors) and the match editor (single score or set-by-set) |
 | `components/GroupStageView.tsx` | Group standings tables, round-robin fixtures, manual finishing order |
 | `app/new` | Bracket builder |
 | `app/b/[id]` | Bracket viewer/editor (`local-*` ids live in the browser) |
+| `app/[slug]` | Custom links, resolved server-side to a bracket |
 | `app/dashboard` | List of cloud + local brackets |
 | `app/api/*` | Auth and bracket CRUD endpoints |
 

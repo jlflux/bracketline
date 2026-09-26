@@ -55,7 +55,21 @@ async function init(): Promise<Client> {
     ],
     "write"
   );
+  await migrate(db);
   return db;
+}
+
+/** Additive schema changes for databases created by an earlier version. */
+async function migrate(db: Client) {
+  const info = await db.execute("PRAGMA table_info(brackets)");
+  const columns = new Set(info.rows.map((r) => String(r.name)));
+  if (!columns.has("slug")) {
+    await db.execute("ALTER TABLE brackets ADD COLUMN slug TEXT");
+  }
+  // NULLs don't collide in a SQLite unique index, so unslugged brackets are fine.
+  await db.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_brackets_slug ON brackets(slug)"
+  );
 }
 
 let ready: Promise<Client> | null = null;

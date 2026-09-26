@@ -718,9 +718,16 @@ textarea {
 }
 .groups-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  /* One group per row on phones, two on desktop — wider cards mean fewer
+     truncated team names. minmax(0, …) keeps the cards shrinkable. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   margin-bottom: 8px;
+}
+@media (min-width: 780px) {
+  .groups-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .group-card {
   padding: 16px;
@@ -1017,6 +1024,25 @@ textarea {
 }
 [data-theme="dark"] .sets-summary {
   color: var(--accent);
+}
+
+/* ---------- Custom link ---------- */
+.slug-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.slug-prefix {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.slug-row .input {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-weight: 600;
 }
 
 /* ---------- Sport & bracket-split settings ---------- */

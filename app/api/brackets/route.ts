@@ -16,7 +16,7 @@ export const GET = apiHandler(async () => {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   const db = await getDb();
   const res = await db.execute({
-    sql: "SELECT id, name, data FROM brackets WHERE user_id = ? ORDER BY updated_at DESC",
+    sql: "SELECT id, name, data, slug FROM brackets WHERE user_id = ? ORDER BY updated_at DESC",
     args: [user.id],
   });
   const brackets = res.rows.map((r: Record<string, unknown>) => {
@@ -24,6 +24,7 @@ export const GET = apiHandler(async () => {
     return {
       id: String(r.id),
       name: String(r.name),
+      slug: r.slug ? String(r.slug) : null,
       participants: participantCount(data),
       updatedAt: data.updatedAt,
     };

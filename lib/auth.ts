@@ -5,7 +5,24 @@ import { getDb } from "./db";
 const SESSION_COOKIE = "bl_session";
 const SESSION_DAYS = 30;
 
-export type User = { id: string; email: string; username: string };
+export type User = {
+  id: string;
+  email: string;
+  username: string;
+  isAdmin?: boolean;
+};
+
+/**
+ * Admins are listed in the ADMIN_EMAILS environment variable, comma
+ * separated. They get the reserved abilities — currently custom links.
+ */
+export function isAdminEmail(email: string): boolean {
+  return (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(email.trim().toLowerCase());
+}
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -132,9 +149,11 @@ export async function getCurrentUser(): Promise<User | null> {
   });
   const row = res.rows[0];
   if (!row) return null;
+  const email = String(row.email);
   return {
     id: String(row.id),
-    email: String(row.email),
+    email,
     username: String(row.username),
+    isAdmin: isAdminEmail(email),
   };
 }
