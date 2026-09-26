@@ -946,9 +946,11 @@ function FollowPicker({
 }) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
-  const shown = needle
-    ? teams.filter((t) => t.name.toLowerCase().includes(needle))
-    : teams;
+  // People scan this list for a name, so order it that way rather than by
+  // draw position.
+  const shown = teams
+    .filter((t) => !needle || t.name.toLowerCase().includes(needle))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -978,7 +980,6 @@ function FollowPicker({
               <span className="follow-mark" aria-hidden>
                 {current === t.id ? "★" : "☆"}
               </span>
-              {t.seed && <span className="seed-tag">{t.seed}</span>}
               <span className="follow-name">{t.name}</span>
             </button>
           ))}
